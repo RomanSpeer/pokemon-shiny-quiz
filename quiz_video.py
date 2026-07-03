@@ -1,4 +1,5 @@
 import os
+import platform
 import random
 from pathlib import Path
 
@@ -15,10 +16,16 @@ from moviepy.editor import (
 )
 from PIL import Image
 
-change_settings({
-    "IMAGEMAGICK_BINARY": r"C:\Program Files\ImageMagick-7.1.2-Q16-HDRI\magick.exe"
-})
-
+# Nur unter Windows explizit das ImageMagick-Binary setzen.
+if platform.system() == "Windows":
+    change_settings({
+        "IMAGEMAGICK_BINARY": r"C:\Program Files\ImageMagick-7.1.2-Q16-HDRI\magick.exe"
+    })
+else:
+    # Unter Linux (GitHub Actions) verlässt sich MoviePy auf das installierte 'convert'/'magick'.
+    # Optional kannst du es explizit setzen, wenn du willst:
+    # change_settings({"IMAGEMAGICK_BINARY": "convert"})
+    pass
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
