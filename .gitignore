@@ -1,0 +1,21 @@
+# Python venv
+.venv/
+venv/
+env/
+
+# Python-Cache
+__pycache__/
+*.pyc
+
+# IDE/Editor
+.idea/
+.vscode/
+
+# Video/Audio-Output
+*.mp4
+*.ogg
+*.wav
+*.log
+
+# Downloaded assets (Pokémon-Sprites etc.)
+assets/
