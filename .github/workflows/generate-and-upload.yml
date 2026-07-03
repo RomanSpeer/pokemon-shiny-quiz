@@ -1,0 +1,40 @@
+name: Generate shiny quiz video
+
+on:
+  schedule:
+    - cron: "0 6,14,21 * * *"  # 3x pro Tag (UTC-Zeiten anpassen)
+  workflow_dispatch: {}
+
+jobs:
+  generate-video:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download assets from latest release
+        run: |
+          # Für öffentliches Repo reicht das:
+          curl -L "https://github.com/${{ github.repository }}/releases/latest/download/assets.tar.gz" -o assets.tar.gz
+          mkdir -p assets
+          tar xzf assets.tar.gz
+
+      - name: Generate video
+        run: |
+          python quiz_video.py --output output.mp4 --fast
