@@ -104,10 +104,16 @@ def _load_random_background_frame():
     for ext in patterns:
         files.extend(BACKGROUND_IMAGES_DIR.glob(ext))
 
+    # macOS-Resource-Files (._*) und versteckte Dateien rausfiltern
+    files = [
+        f for f in files
+        if not f.name.startswith("._") and not f.name.startswith(".")
+    ]
+
     print(f"Gefundene Background-Images in {BACKGROUND_IMAGES_DIR}: {len(files)}")
 
     if not files:
-        print("Hinweis: Keine Background-Images gefunden.")
+        print("Hinweis: Keine gültigen Background-Images gefunden.")
         return None
 
     bg_path = random.choice(files)
@@ -133,7 +139,8 @@ def _load_random_background_frame():
 
         frame = np.array(img)
         return frame
-    except Exception:
+    except Exception as e:
+        print(f"Hinweis: Fehler beim Laden des Background-Images {bg_path} ({e}).")
         return None
 
 
