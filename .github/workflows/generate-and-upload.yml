@@ -41,13 +41,14 @@ jobs:
 
       - name: Download assets from latest release
         run: |
+          # assets.tar.gz sollte auf Release-Ebene die Verzeichnisse enthalten:
+          # assets/, fonts/, music/, background_images/
           curl -L "https://github.com/${{ github.repository }}/releases/latest/download/assets.tar.gz" -o assets.tar.gz
-          mkdir -p assets
           tar xzf assets.tar.gz
 
       - name: Generate video
         run: |
-          python quiz_video.py --output output.mp4 --fast
+          python quiz_video.py --output output.mp4
 
       - name: Upload video as artifact (zum Testen)
         uses: actions/upload-artifact@v4

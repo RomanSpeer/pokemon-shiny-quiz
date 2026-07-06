@@ -13,13 +13,15 @@ from moviepy.editor import (
     vfx,
     TextClip,
     ImageClip,
+    ImageSequenceClip,
 )
-from PIL import Image, ImageFilter, ImageDraw, ImageFont
+from PIL import Image, ImageFilter
 import numpy as np
 
 # ---------------------------------------------------------------------------
 # ImageMagick / Pillow-Kompatibilität
 # ---------------------------------------------------------------------------
+# MoviePy 1.0.3 erwartet Image.ANTIALIAS, das in neueren Pillow-Versionen entfernt wurde.
 if not hasattr(Image, "ANTIALIAS"):
     try:
         Image.ANTIALIAS = Image.Resampling.LANCZOS
@@ -39,54 +41,56 @@ print(os.name)
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-WIDTH, HEIGHT = 1080, 1920  # TikTok vertical resolution
+WIDTH, HEIGHT = 1080, 1920               # TikTok vertical resolution
 
-QUESTION_DURATION = 10       # Sekunden für die Frage
-REVEAL_DURATION = 2.5         # Sekunden für das Reveal
-N_ROUNDS = 5
-# Anzahl der Runden
+QUESTION_DURATION = 15                   # Sekunden für die Frage
+REVEAL_DURATION = 5                      # Sekunden für das Reveal
+N_ROUNDS = 3                             # Anzahl Quiz-Runden
 
-# Fonts (müssen von ImageMagick verstanden werden)
-# Wenn du eine echte Pokémon-Font installiert hast, trag sie hier ein.
-BASE_DIR = Path(__file__).resolve().parent
+# Fonts (müssen vom ImageMagick auf deinem System verstanden werden)
+FONT_NAME = "AvantGarde-Book"
+COUNTDOWN_FONT_NAME = "AvantGarde-Book"
 
-# Passe den Dateinamen exakt an das an, was bei dir liegt:
-# z.B. Pokemon Solid.ttf, PokemonSolid.ttf, PokemonSolid.otf, etc.
-FONT_PATH = BASE_DIR / "fonts" / "pokemon" / "PokemonSolid.ttf"
-
-print("Font path:", FONT_PATH)
-print("Font exists:", FONT_PATH.is_file())
-
-FONT_NAME = str(FONT_PATH)
-COUNTDOWN_FONT_NAME = FONT_NAME
-
-FONT_SIZE = 90
+FONT_SIZE = 80
 TEXT_COLOR = "white"
 COUNTDOWN_FONT_SIZE = 70
 
-# Hintergrundmusik & Soundeffekte
-BACKGROUND_MUSIC_DIR = Path("music/video_background_music")
-POKEBALL_SFX_PATH = Path("music/sound_effects/pokeball.mp3")
+# Hintergrundmusik: Ordner mit mehreren mp3-Dateien
+MUSIC_DIR = Path("music")
 
-# Hintergrundbilder unter background_images/backgrounds
+# Hintergrundbilder (blurred): PNG/JPG unter background_images/backgrounds
 BACKGROUND_IMAGES_DIR = Path("background_images/backgrounds")
 
 # Pokéball-Animation
 POKEBALL_ANIMATION_PATH = Path("background_images/animations/pokeball_animation.gif")
-POKEBALL_PHASE_DURATION = 0.7  # feste Dauer der Pokéball-Phase
+POKEBALL_PHASE_DURATION = 0.7  # feste Dauer der Pokéball-Phase (~Fast-Mode)
 
-# Sprite-Größe: größer
-SPRITE_QUAD_RATIO = 2.8       # max. 280 % der Quadrantbreite/-höhe
-MAX_SCALE_UP = 3.5            # maximal 3.5x größer als Original
+# Sprite-Größe: größer, aber begrenzt
+SPRITE_QUAD_RATIO = 2.0                  # max. 200 % der Quadrantbreite/-höhe
+MAX_SCALE_UP = 2.6                       # maximal 2.6x größer als Original
 
-# feste Skalierung für Pokéball-GIFs
+# feste Skalierung für Pokéball-GIFs (unabhängig von SPRITE_QUAD_RATIO/MAX_SCALE_UP)
 POKEBALL_SCALE = 1.5
 
 
+def _apply_fast_mode():
+    """Kurze Zeiten und eine Runde für schnelle Tests."""
+    global QUESTION_DURATION, REVEAL_DURATION, N_ROUNDS
+    QUESTION_DURATION = 2      # 2 Sekunden Frage
+    REVEAL_DURATION = 1        # 1 Sekunde Reveal
+    N_ROUNDS = 1               # eine Runde → ~3 Sekunden Video
+
+
 # ---------------------------------------------------------------------------
-# Helper: random geblurrtes Hintergrundbild laden
+# Helper: random geblurrtes Hintergrundbild laden (ohne Stretch, Center-Crop)
 # ---------------------------------------------------------------------------
 def _load_random_background_frame():
+    """
+    Lädt ein zufälliges PNG/JPG aus BACKGROUND_IMAGES_DIR,
+    skaliert es mit beibehaltener Aspect Ratio so, dass WIDTH x HEIGHT bedeckt ist,
+    schneidet dann die Mitte auf (WIDTH, HEIGHT) zu und blurred das Ergebnis.
+    Gibt None zurück, wenn keine passenden Bilder vorhanden sind.
+    """
     if not BACKGROUND_IMAGES_DIR.is_dir():
         return None
 
@@ -102,18 +106,22 @@ def _load_random_background_frame():
         img = Image.open(bg_path).convert("RGB")
         orig_w, orig_h = img.size
 
+        # Skalierungsfaktor, so dass das Bild die Zielfläche komplett bedeckt (cover)
         scale = max(WIDTH / orig_w, HEIGHT / orig_h)
         new_w = int(orig_w * scale)
         new_h = int(orig_h * scale)
 
+        # Resize mit beibehaltener Aspect Ratio
         img = img.resize((new_w, new_h), Image.ANTIALIAS)
 
+        # Center-Crop auf 1080x1920
         left = (new_w - WIDTH) // 2
         top = (new_h - HEIGHT) // 2
         right = left + WIDTH
         bottom = top + HEIGHT
         img = img.crop((left, top, right, bottom))
 
+        # Blur, damit der Hintergrund nicht zu dominant ist
         img = img.filter(ImageFilter.GaussianBlur(radius=12))
 
         frame = np.array(img)
@@ -123,9 +131,10 @@ def _load_random_background_frame():
 
 
 # ---------------------------------------------------------------------------
-# Helper: prüfen, ob ein GIF animiert ist (Pillow)
+# Helper: prüfen, ob ein GIF wirklich animiert ist (Pillow)
 # ---------------------------------------------------------------------------
 def _is_animated_gif(path: Path) -> bool:
+    """True, wenn path eine animierte GIF-Datei (>= 2 Frames) ist."""
     if not path.is_file():
         return False
     try:
@@ -137,8 +146,9 @@ def _is_animated_gif(path: Path) -> bool:
 
 def _is_valid_pokemon_dir(p: Path) -> bool:
     """
-    Gültig, wenn normal.gif & shiny.gif existieren und animiert sind.
-    GIF-Decoding machen wir via VideoFileClip(has_mask=True).
+    Ein Pokémon-Ordner ist gültig, wenn:
+    - normal.gif existiert und animiert ist
+    - shiny.gif existiert und animiert ist
     """
     normal = p / "normal.gif"
     shiny = p / "shiny.gif"
@@ -156,62 +166,55 @@ def _is_valid_pokemon_dir(p: Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Helper: GIF einmal via FFmpeg dekodieren, dann endlos loopen
+# Helper: Pokéball als ImageSequenceClip laden (ohne VideoFileClip)
 # ---------------------------------------------------------------------------
-def _load_gif_clip_ffmpeg_loop(path: Path, desired_duration: float) -> VideoClip:
+def _load_pokeball_clip():
     """
-    Lädt ein GIF mit VideoFileClip(has_mask=True), sammelt alle Frames
-    (und ggf. Maskenframes) ein und baut daraus einen eigenen VideoClip,
-    der die Frames endlos loopen kann (t -> t % orig_dur), ohne FFmpeg
-    für lange Loops zu benutzen.
+    Lädt die Pokéball-Animation mit Pillow und baut daraus ein ImageSequenceClip.
+    Damit umgehen wir FFMPEG/VideoFileClip für dieses GIF komplett.
+    Gibt einen Clip oder None zurück.
     """
-    base = VideoFileClip(str(path), has_mask=True)
-    fps = base.fps or 25
+    if not POKEBALL_ANIMATION_PATH.is_file():
+        return None
 
-    frames_rgb = []
-    for frame in base.iter_frames(fps=fps):
-        frames_rgb.append(frame)
+    try:
+        im = Image.open(POKEBALL_ANIMATION_PATH)
+        frames = []
+        durations_ms = []
 
-    if not frames_rgb:
-        base.close()
-        raise RuntimeError(f"Keine Frames im GIF {path}")
+        while True:
+            frame = im.convert("RGBA")
+            frames.append(np.array(frame))
+            durations_ms.append(im.info.get("duration", 40))  # default 40ms
+            im.seek(im.tell() + 1)
+    except EOFError:
+        pass
+    except Exception as e:
+        print(f"Warnung: Pokéball-GIF konnte nicht komplett gelesen werden: {e}")
+        return None
 
-    total_frames = len(frames_rgb)
+    if not frames:
+        return None
 
-    frames_mask = None
-    if base.mask is not None:
-        frames_mask = [m for m in base.mask.iter_frames(fps=fps)]
+    avg_duration_ms = sum(durations_ms) / len(durations_ms)
+    fps = 1000.0 / avg_duration_ms if avg_duration_ms > 0 else 25.0
 
-    base.close()
-
-    def make_frame(t):
-        idx = int((t * fps) % total_frames)
-        return frames_rgb[idx]
-
-    clip = VideoClip(make_frame, duration=desired_duration)
-
-    if frames_mask is not None and len(frames_mask) == total_frames:
-        def make_mask_frame(t):
-            idx = int((t * fps) % total_frames)
-            return frames_mask[idx]
-        mask_clip = VideoClip(make_mask_frame, ismask=True, duration=desired_duration)
-        clip = clip.set_mask(mask_clip)
-
-    return clip.set_duration(desired_duration)
+    clip = ImageSequenceClip(frames, fps=fps)
+    return clip
 
 
 # ---------------------------------------------------------------------------
-# Helper: Quadranten aus GIFs bauen (FFmpeg -> eigener Loop-Clip)
+# Helper: Quadranten aus GIFs bauen (Pokémon via VideoFileClip)
 # ---------------------------------------------------------------------------
 def _build_quadrants(duration: float, gif_paths: list[str], pop_scale: bool = False, fixed_scale: float = None):
     """
-    Erzeugt vier Quadranten aus GIF-Dateien:
+    Erzeugt vier Quadranten aus GIF-Dateien (Pokémon) mit VideoFileClip:
 
-    - GIFs werden einmal via VideoFileClip(has_mask=True) dekodiert.
-    - Eigener VideoClip mit endlosem Loop wird gebaut.
+    - GIFs werden über die gegebene Dauer geloopt.
     - Seitenverhältnis bleibt erhalten.
-    - Sprites werden moderat hochskaliert (bis MAX_SCALE_UP).
-    - pop_scale=True: kleiner Start, dann „Aufpoppen“ in den ersten ~0.6s.
+    - Sprites werden moderat hochskaliert (bis MAX_SCALE_UP), sonst eher kleiner.
+    - GIF-Transparenz wird genutzt (has_mask=True).
+    - pop_scale=True: kleiner Start, dann leichtes „Aufpoppen“ in den ersten ~0.6s.
     - fixed_scale: wenn gesetzt, wird genau dieser Scale-Faktor verwendet.
     """
     quad_w, quad_h = WIDTH // 2, HEIGHT // 2
@@ -222,12 +225,15 @@ def _build_quadrants(duration: float, gif_paths: list[str], pop_scale: bool = Fa
     sprite_max_h = quad_h * SPRITE_QUAD_RATIO
 
     for path_str, pos in zip(gif_paths, positions):
-        clip = _load_gif_clip_ffmpeg_loop(Path(path_str), duration)
+        clip = VideoFileClip(path_str, has_mask=True)
+        clip = clip.fx(vfx.loop, duration=duration)
 
+        # Zielgröße basierend auf Quadrant
         desired_scale_w = sprite_max_w / clip.w
         desired_scale_h = sprite_max_h / clip.h
         desired_scale = min(desired_scale_w, desired_scale_h)
 
+        # Basis-Scale bestimmen
         if fixed_scale is not None:
             base_scale = fixed_scale
         else:
@@ -247,6 +253,7 @@ def _build_quadrants(duration: float, gif_paths: list[str], pop_scale: bool = Fa
             if base_scale != 1.0:
                 clip = clip.resize(base_scale)
 
+        # zentrieren im Quadranten
         quad_x, quad_y = pos
         x = quad_x + (quad_w - clip.w) / 2
         y = quad_y + (quad_h - clip.h) / 2
@@ -259,128 +266,14 @@ def _build_quadrants(duration: float, gif_paths: list[str], pop_scale: bool = Fa
 
 
 # ---------------------------------------------------------------------------
-# Helper: Pokéball als VideoFileClip (optional über FFmpeg)
-# ---------------------------------------------------------------------------
-def _load_pokeball_clip():
-    if not POKEBALL_ANIMATION_PATH.is_file():
-        return None
-    try:
-        clip = VideoFileClip(str(POKEBALL_ANIMATION_PATH), has_mask=True)
-        return clip
-    except Exception as e:
-        print(f"Warnung: Pokéball-GIF kann von FFmpeg nicht gelesen werden: {e}")
-        return None
-
-
-def _build_healthbar(duration: float) -> VideoClip:
-    """
-    Zentrierte Healthbar im Pokémon-Stil:
-
-    - Schwarze, abgerundete Border (Pill-Shape)
-    - Innen weißer Hintergrund
-    - Füllung von links:
-        - >50% Restzeit: grün
-        - 50% bis 15%: orange
-        - <15%: rot
-    - "Verlust" kommt von rechts: rechter Teil bleibt weiß.
-    """
-    bar_w = int(WIDTH * 0.5)      # etwas schmaler als zuvor
-    bar_h = 30                    # etwas flacher
-    border_thickness = 8          # dickere Border
-    radius = bar_h // 2           # abgerundete Ecken (Pill-Form)
-
-    total_w = bar_w + 2 * border_thickness
-    total_h = bar_h + 2 * border_thickness
-
-    def make_frame(t):
-        ratio = max(0.0, min(1.0, (duration - t) / duration))
-
-        # Farbwahl abhängig von Restzeit
-        if ratio > 0.5:
-            color = (80, 200, 80)      # Grün
-        elif ratio > 0.15:
-            color = (255, 165, 0)     # Orange
-        else:
-            color = (220, 60, 60)     # Rot
-
-        # Pillow-Canvas für hübsche abgerundete Ecken
-        img = Image.new("RGB", (total_w, total_h), (0, 0, 0))
-        draw = ImageDraw.Draw(img)
-
-        x0 = border_thickness
-        y0 = border_thickness
-        x1 = x0 + bar_w
-        y1 = y0 + bar_h
-
-        # Innenbereich: weißer Hintergrund (damit "Verlust" von rechts weiß ist)
-        draw.rounded_rectangle(
-            [(x0, y0), (x1, y1)],
-            radius=radius,
-            fill=(255, 255, 255),
-            outline=None
-        )
-
-        # Füllung von links: abgerundeter Balken mit der aktuellen Farbe
-        fill_w = max(1, int(bar_w * ratio))
-        if fill_w > 0:
-            draw.rounded_rectangle(
-                [(x0, y0), (x0 + fill_w, y1)],
-                radius=radius,
-                fill=color,
-                outline=None
-            )
-
-        # zurück als NumPy-Array
-        arr = np.array(img)
-        return arr
-
-    health_clip = VideoClip(make_frame, duration=duration)
-    # knapp unter der vertikalen Mitte (z.B. 52 % der Höhe)
-    health_clip = health_clip.set_position(("center", int(HEIGHT * 0.52)))
-    return health_clip.set_duration(duration)
-
-def _build_guess_text_clip(text: str, duration: float) -> VideoClip:
-    """
-    Rendert den Titel-Text (z.B. "Guess the Shiny") mit der Pokémon-Font
-    über Pillow und gibt ihn als ImageClip zurück, zentriert über der Healthbar.
-    """
-    # Transparenter Fullscreen-Canvas
-    img = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
-    # Font laden – im Fehlerfall Default-Font verwenden
-    try:
-        font = ImageFont.truetype(FONT_NAME, FONT_SIZE)
-    except OSError as e:
-        print(f"Warnung: Pokémon-Font konnte nicht geladen werden ({e}). Verwende Default-Font.")
-        font = ImageFont.load_default()
-
-    # Textgröße bestimmen – Pillow 10+: textbbox, ältere Versionen: textsize
-    if hasattr(draw, "textbbox"):
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
-    else:
-        text_w, text_h = draw.textsize(text, font=font)
-
-    # Zentrierte Position (knapp über der Healthbar)
-    x = (WIDTH - text_w) // 2
-    # leicht über der Mitte, z.B. 0.45
-    y = int(HEIGHT * 0.45)
-
-    # Weißen Text zeichnen
-    draw.text((x, y), text, font=font, fill=(255, 255, 255, 255))
-
-    # In ImageClip verwandeln
-    frame = np.array(img)
-    clip = ImageClip(frame).set_duration(duration)
-    return clip.set_position((0, 0))
-
-
-# ---------------------------------------------------------------------------
-# Helper: Countdown-Clip (falls du später doch wieder Zahl-Countdown willst)
+# Helper: Countdown-Clip (Text transparent, weiter oben)
 # ---------------------------------------------------------------------------
 def _build_countdown(duration: float) -> VideoClip:
+    """
+    Baut einen numerischen Countdown-Clip von duration bis 1 herunter.
+    Der Text hat einen transparenten Hintergrund (keine Box).
+    Implementiert als Sequenz von TextClips.
+    """
     total = int(duration)
     if total <= 0:
         total = 1
@@ -394,7 +287,7 @@ def _build_countdown(duration: float) -> VideoClip:
             fontsize=COUNTDOWN_FONT_SIZE,
             font=COUNTDOWN_FONT_NAME,
             color=TEXT_COLOR,
-            method="label",  # transparenter Text, keine Box
+            method="label",          # transparenter Text, keine Box
         ).set_duration(per_step)
         clips.append(txt)
 
@@ -403,45 +296,56 @@ def _build_countdown(duration: float) -> VideoClip:
 
 
 # ---------------------------------------------------------------------------
-# Helper: eine Quiz-Runde
+# Helper: eine Quiz-Runde (Frage + Reveal + Cry)
 # ---------------------------------------------------------------------------
 def _create_round(pokemon_dirs, background_frame):
+    """
+    Erzeugt eine Quiz-Runde:
+    - Frage: kurze Pokéball-Animation pro Quadrant, danach 4 Pokémon-GIFs mit Pop-Scale,
+      geblurrter Hintergrund (falls vorhanden), Text, Countdown
+    - Reveal: shiny Pokémon in der Mitte, mit Cry-Audio (falls vorhanden), auf gleichem Hintergrund
+    """
+    # 4 zufällige gültige Pokémon-Ordner
     selected_dirs = random.sample(pokemon_dirs, k=4)
 
+    # shiny unter den 4
     shiny_dir = random.choice(selected_dirs)
     shiny_path = shiny_dir / "shiny.gif"
     if not shiny_path.is_file():
-        raise FileNotFoundError(f"Shiny GIF not found: {shiny_path}")
+        raise FileNotFoundError(f"Shiny GIF not found (should not happen): {shiny_path}")
 
+    # Cry-Pfad (falls vorhanden)
     cry_path = shiny_dir / "cry.ogg"
     cry_str = str(cry_path) if cry_path.is_file() else None
 
+    # restliche drei: normal.gif
     normal_dirs = [d for d in selected_dirs if d != shiny_dir]
     normal_paths = []
     for d in normal_dirs:
         normal_path = d / "normal.gif"
         if not normal_path.is_file():
-            raise FileNotFoundError(f"Normal GIF not found: {normal_path}")
+            raise FileNotFoundError(f"Normal GIF not found (should not happen): {normal_path}")
         normal_paths.append(normal_path)
 
+    # Liste der GIFs (ein shiny + drei normal) in zufälliger Reihenfolge
     gif_order = [str(shiny_path)] + [str(p) for p in normal_paths]
     random.shuffle(gif_order)
 
     # -------------------- Teil 1: Frage --------------------
+    # Hintergrund für Frage-Phase
     elements_q = []
-    pokeball_sfx_offset = None  # Zeitpunkt innerhalb der Runde, wann der SFX laufen soll
     if background_frame is not None:
         bg_clip_q = ImageClip(background_frame).set_duration(QUESTION_DURATION)
         elements_q.append(bg_clip_q)
 
+    # Pokéball-Phase: feste Dauer, kurz (z.B. 0.7s), damit wie im Fast-Mode
     pokeball_duration = 0.0
     pokeball_base_clip = _load_pokeball_clip()
 
     if pokeball_base_clip and QUESTION_DURATION > 1.0:
+        # max. POKEBALL_PHASE_DURATION, aber nie länger als QUESTION_DURATION - 0.5
         pokeball_duration = min(POKEBALL_PHASE_DURATION, QUESTION_DURATION - 0.5)
 
-        # SFX soll zur Hälfte der Pokéball-Duration gespielt werden
-        pokeball_sfx_offset = 0.0
         quad_w, quad_h = WIDTH // 2, HEIGHT // 2
         positions = [(0, 0), (quad_w, 0), (0, quad_h), (quad_w, quad_h)]
 
@@ -459,8 +363,9 @@ def _create_round(pokemon_dirs, background_frame):
 
         elements_q.extend(pokeball_quads)
     else:
-        print("Hinweis: Pokéball-Animation wird nicht verwendet (Datei fehlt oder FFmpeg mag sie nicht).")
+        print("Hinweis: Pokéball-Animation wird nicht verwendet (Datei fehlt oder GIF konnte nicht gelesen werden).")
 
+    # Pokémon-Phase: Pokémon erscheinen nach Pokéball, mit Pop-Scale-Animation
     pokemon_duration = QUESTION_DURATION - pokeball_duration
     pokemon_quads = _build_quadrants(
         pokemon_duration,
@@ -476,20 +381,34 @@ def _create_round(pokemon_dirs, background_frame):
         size=(WIDTH, HEIGHT)
     ).set_duration(QUESTION_DURATION)
 
-    # Text "Guess the Shiny" mittig über der Healthbar (Pillow + Pokémon-Font)
-    guess_text = _build_guess_text_clip("Guess the Shiny", QUESTION_DURATION)
+    # Frage-Text (transparent, etwas mittiger)
+    question_text = (
+        TextClip(
+            "Find the Shiny",
+            fontsize=FONT_SIZE,
+            font=FONT_NAME,
+            color=TEXT_COLOR,
+            method="label",          # kurzer Text, keine Caption-Box
+        )
+        .set_duration(QUESTION_DURATION)
+        .set_position(("center", HEIGHT * 0.4))
+    )
 
-    # Healthbar mittig
-    healthbar_clip = _build_healthbar(QUESTION_DURATION)
+    countdown = _build_countdown(QUESTION_DURATION).set_position(
+        ("center", HEIGHT * 0.6)  # etwas höher
+    )
 
+    # Text und Countdown zuletzt einfügen → liegen über allem
     question_clip = CompositeVideoClip(
-        [background_q, guess_text, healthbar_clip],
+        [background_q, countdown, question_text],
         size=(WIDTH, HEIGHT)
     ).set_duration(QUESTION_DURATION)
 
-    # -------------------- Teil 2: Reveal --------------------
-    shiny_clip = _load_gif_clip_ffmpeg_loop(shiny_path, REVEAL_DURATION)
+    # -------------------- Teil 2: Reveal (nur shiny, gleicher Hintergrund) --------------------
+    shiny_clip = VideoFileClip(str(shiny_path), has_mask=True)
+    shiny_clip = shiny_clip.fx(vfx.loop, duration=REVEAL_DURATION)
 
+    # shiny deutlich größer in der Mitte anzeigen (Scale 3.0)
     scale = 3.0
     shiny_clip = shiny_clip.resize(scale)
     shiny_clip = shiny_clip.set_position(("center", "center")).set_duration(REVEAL_DURATION)
@@ -508,14 +427,19 @@ def _create_round(pokemon_dirs, background_frame):
 
     round_clip = concatenate_videoclips([question_clip, reveal_clip])
 
-    # Rückgabe: Video-Clip, Cry-Audio-Pfad, Pokéball-SFX-Offset (innerhalb der Runde)
-    return round_clip, cry_str, pokeball_sfx_offset
+    # Runde + Cry-Pfad zurückgeben
+    return round_clip, cry_str
 
 
 # ---------------------------------------------------------------------------
-# Finales Video (mehrere Runden + Musik + Cry)
+# Finales Video (mehrere Runden + Musik + Cries)
 # ---------------------------------------------------------------------------
-def create_quiz_video(output_path: str = "quiz.mp4"):
+def create_quiz_video(output_path: str = "quiz.mp4", fast_mode: bool = False):
+    """Erzeugt das vollständige Quiz-Video mit mehreren Runden, Musik und Cry-Audio."""
+    if fast_mode:
+        _apply_fast_mode()
+
+    # alle Pokémon-Ordner unter assets (leichter Check)
     assets_dir = Path("assets")
     all_dirs = [p for p in assets_dir.iterdir() if p.is_dir()]
     pokemon_dirs = [p for p in all_dirs if _is_valid_pokemon_dir(p)]
@@ -528,36 +452,39 @@ def create_quiz_video(output_path: str = "quiz.mp4"):
 
     print(f"{len(pokemon_dirs)} gültige Pokémon-Ordner gefunden.")
 
+    # einmalig random Hintergrundbild für das ganze Video laden
     background_frame = _load_random_background_frame()
 
+    # Rundenclips und Cry-Pfade erzeugen
     rounds = []
     cry_paths = []
-    pokeball_offsets = []
 
     for round_idx in range(N_ROUNDS):
-        round_clip, cry_path, pokeball_offset = _create_round(pokemon_dirs, background_frame)
+        round_clip, cry_path = _create_round(pokemon_dirs, background_frame)
         rounds.append(round_clip)
         cry_paths.append(cry_path)
-        pokeball_offsets.append(pokeball_offset)
         print(f"Runde {round_idx + 1} erzeugt.")
 
+    # Video ohne Audio zusammensetzen
     final = concatenate_videoclips(rounds)
     total_duration = final.duration
 
+    # -------------------- Audio-Spuren bauen --------------------
     audio_clips = []
 
-    if BACKGROUND_MUSIC_DIR.is_dir():
-        music_files = sorted(BACKGROUND_MUSIC_DIR.glob("*.mp3"))
+    # Hintergrundmusik: zufällige mp3 aus MUSIC_DIR (falls vorhanden)
+    if MUSIC_DIR.is_dir():
+        music_files = sorted(MUSIC_DIR.glob("*.mp3"))
         if music_files:
             music_file = random.choice(music_files)
-            print(f"Hintergrundmusik: {music_file}")
+            print(f"Verwende Hintergrundmusik: {music_file}")
             bg = AudioFileClip(str(music_file))
             bg = bg.subclip(0, min(bg.duration, total_duration))
             audio_clips.append(bg)
 
+    # Cries pro Runde: jeder Cry startet beim Reveal der jeweiligen Runde
     current_start = 0.0
-    for round_clip, cry_path, pokeball_offset in zip(rounds, cry_paths, pokeball_offsets):
-        # Cry-Sound im Reveal
+    for round_clip, cry_path in zip(rounds, cry_paths):
         if cry_path:
             cry = AudioFileClip(cry_path)
             cry = cry.subclip(0, min(cry.duration, REVEAL_DURATION))
@@ -565,19 +492,14 @@ def create_quiz_video(output_path: str = "quiz.mp4"):
             cry = cry.set_start(current_start + reveal_start_in_round)
             audio_clips.append(cry)
 
-        # Pokéball-SFX in der Fragephase, zur Hälfte der Pokéball-Duration
-        if pokeball_offset is not None and POKEBALL_SFX_PATH.is_file():
-            sfx = AudioFileClip(str(POKEBALL_SFX_PATH))
-            # nicht kürzen – kompletten Sound (5–6 s) laufen lassen
-            sfx = sfx.set_start(current_start + pokeball_offset)
-            audio_clips.append(sfx)
-
         current_start += round_clip.duration
 
+    # Audio zusammensetzen und auf das Video legen
     if audio_clips:
         final_audio = CompositeAudioClip(audio_clips).set_duration(total_duration)
         final = final.set_audio(final_audio)
 
+    # -------------------- Video schreiben --------------------
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     final.write_videofile(output_path, fps=30, codec="libx264", audio=bool(audio_clips))
 
@@ -585,7 +507,12 @@ def create_quiz_video(output_path: str = "quiz.mp4"):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Create shiny Pokémon quiz video (multi-round)")
+    parser = argparse.ArgumentParser(description="Create shiny Pokémon quiz video")
+    parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="Fast test mode (kurze Dauer, eine Runde)",
+    )
     parser.add_argument(
         "--output",
         type=str,
@@ -594,4 +521,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    create_quiz_video(output_path=args.output)
+    create_quiz_video(output_path=args.output, fast_mode=args.fast)
