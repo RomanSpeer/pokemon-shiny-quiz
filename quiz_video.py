@@ -547,13 +547,20 @@ def create_quiz_video(output_path: str = "quiz.mp4"):
     audio_clips = []
 
     if BACKGROUND_MUSIC_DIR.is_dir():
-        music_files = sorted(BACKGROUND_MUSIC_DIR.glob("*.mp3"))
+        # Nur "echte" MP3s ohne macOS-Resource-Files (._Dateien)
+        music_files = sorted(
+            mf for mf in BACKGROUND_MUSIC_DIR.glob("*.mp3")
+            if not mf.name.startswith("._")
+        )
+
         if music_files:
             music_file = random.choice(music_files)
             print(f"Hintergrundmusik: {music_file}")
             bg = AudioFileClip(str(music_file))
             bg = bg.subclip(0, min(bg.duration, total_duration))
             audio_clips.append(bg)
+        else:
+            print("Hinweis: Keine gültigen Hintergrundmusik-Dateien gefunden.")
 
     current_start = 0.0
     for round_clip, cry_path, pokeball_offset in zip(rounds, cry_paths, pokeball_offsets):
