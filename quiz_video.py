@@ -43,7 +43,7 @@ WIDTH, HEIGHT = 1080, 1920  # TikTok vertical resolution
 
 QUESTION_DURATION = 10       # Sekunden für die Frage
 REVEAL_DURATION = 2.5         # Sekunden für das Reveal
-N_ROUNDS = 5
+N_ROUNDS = 1
 # Anzahl der Runden
 
 # Fonts (müssen von ImageMagick verstanden werden)
@@ -82,6 +82,10 @@ MAX_SCALE_UP = 3.5            # maximal 3.5x größer als Original
 # feste Skalierung für Pokéball-GIFs
 POKEBALL_SCALE = 1.5
 
+
+print("BACKGROUND_IMAGES_DIR:", BACKGROUND_IMAGES_DIR, "exists:", BACKGROUND_IMAGES_DIR.is_dir())
+print("BACKGROUND_MUSIC_DIR:", BACKGROUND_MUSIC_DIR, "exists:", BACKGROUND_MUSIC_DIR.is_dir())
+print("POKEBALL_SFX_PATH:", POKEBALL_SFX_PATH, "exists:", POKEBALL_SFX_PATH.is_file())
 
 # ---------------------------------------------------------------------------
 # Helper: random geblurrtes Hintergrundbild laden
@@ -547,11 +551,11 @@ def create_quiz_video(output_path: str = "quiz.mp4"):
     audio_clips = []
 
     if BACKGROUND_MUSIC_DIR.is_dir():
-        # Nur "echte" MP3s ohne macOS-Resource-Files (._Dateien)
         music_files = sorted(
             mf for mf in BACKGROUND_MUSIC_DIR.glob("*.mp3")
-            if not mf.name.startswith("._")
+            if not mf.name.startswith("._") and not mf.name.startswith(".")
         )
+        print("Gefundene Background-MP3s:", [str(mf) for mf in music_files])
 
         if music_files:
             music_file = random.choice(music_files)
@@ -561,6 +565,8 @@ def create_quiz_video(output_path: str = "quiz.mp4"):
             audio_clips.append(bg)
         else:
             print("Hinweis: Keine gültigen Hintergrundmusik-Dateien gefunden.")
+    else:
+        print("Hinweis: BACKGROUND_MUSIC_DIR existiert nicht.")
 
     current_start = 0.0
     for round_clip, cry_path, pokeball_offset in zip(rounds, cry_paths, pokeball_offsets):
@@ -573,11 +579,14 @@ def create_quiz_video(output_path: str = "quiz.mp4"):
             audio_clips.append(cry)
 
         # Pokéball-SFX in der Fragephase, zur Hälfte der Pokéball-Duration
+        if pokeball_offset is not None:
+            print("Pokeball-Offset für Runde:", pokeball_offset, "SFX-Pfad existiert:", POKEBALL_SFX_PATH.is_file())
+
         if pokeball_offset is not None and POKEBALL_SFX_PATH.is_file():
             sfx = AudioFileClip(str(POKEBALL_SFX_PATH))
-            # nicht kürzen – kompletten Sound (5–6 s) laufen lassen
             sfx = sfx.set_start(current_start + pokeball_offset)
             audio_clips.append(sfx)
+
 
         current_start += round_clip.duration
 
