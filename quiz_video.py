@@ -92,16 +92,27 @@ print("POKEBALL_SFX_PATH:", POKEBALL_SFX_PATH, "exists:", POKEBALL_SFX_PATH.is_f
 # ---------------------------------------------------------------------------
 def _load_random_background_frame():
     if not BACKGROUND_IMAGES_DIR.is_dir():
+        print("Hinweis: BACKGROUND_IMAGES_DIR existiert nicht:", BACKGROUND_IMAGES_DIR)
         return None
 
     files = []
-    for ext in ("*.png", "*.jpg", "*.jpeg"):
+    patterns = [
+        "*.png", "*.PNG",
+        "*.jpg", "*.JPG",
+        "*.jpeg", "*.JPEG",
+    ]
+    for ext in patterns:
         files.extend(BACKGROUND_IMAGES_DIR.glob(ext))
 
+    print(f"Gefundene Background-Images in {BACKGROUND_IMAGES_DIR}: {len(files)}")
+
     if not files:
+        print("Hinweis: Keine Background-Images gefunden.")
         return None
 
     bg_path = random.choice(files)
+    print("Verwendetes Background-Image:", bg_path)
+
     try:
         img = Image.open(bg_path).convert("RGB")
         orig_w, orig_h = img.size
@@ -595,7 +606,13 @@ def create_quiz_video(output_path: str = "quiz.mp4"):
         final = final.set_audio(final_audio)
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    final.write_videofile(output_path, fps=30, codec="libx264", audio=bool(audio_clips))
+    final.write_videofile(
+        output_path,
+        fps=30,
+        codec="libx264",
+        audio=bool(audio_clips),
+        audio_codec="aac",
+    )
 
 
 if __name__ == "__main__":
