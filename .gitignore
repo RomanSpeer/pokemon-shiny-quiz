@@ -19,3 +19,11 @@ __pycache__/
 
 # Downloaded assets (Pokémon-Sprites etc.)
 assets/
+assets 2/
+assets.tar.gz
+fonts/
+music/
+background_images/
+
+# Credentials
+client_secret.json

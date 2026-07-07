@@ -2,7 +2,11 @@ name: Generate shiny quiz video
 
 on:
   workflow_dispatch: {}
-  # später kannst du wieder schedule hinzufügen
+  schedule:
+    # 3x täglich zu US-Stoßzeiten (Morning/Lunch/Evening ET).
+    # UTC ist fix, ET pendelt durch DST zwischen UTC-4/-5 -> Zeiten können
+    # je nach Jahreszeit um bis zu 1h von der ET-Zielzeit abweichen.
+    - cron: "0 12,16,23 * * *"
 
 jobs:
   generate-video:
@@ -38,6 +42,7 @@ jobs:
           python -m pip install "pillow<10"
           python -m pip install "moviepy==1.0.3"
           python -m pip install requests tqdm
+          python -m pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
 
       - name: Download assets from latest release
         run: |
@@ -55,3 +60,10 @@ jobs:
         with:
           name: shiny-quiz-video
           path: output.mp4
+
+      - name: Upload to YouTube Shorts
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: python upload_youtube.py --video output.mp4
