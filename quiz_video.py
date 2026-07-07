@@ -345,9 +345,12 @@ def _build_healthbar(duration: float) -> VideoClip:
         # Füllung von links: abgerundeter Balken mit der aktuellen Farbe
         fill_w = max(1, int(bar_w * ratio))
         if fill_w > 0:
+            # Radius darf nicht größer als die halbe Füllbreite sein, sonst
+            # wirft PIL bei sehr schmaler Füllung einen ValueError.
+            fill_radius = min(radius, fill_w // 2)
             draw.rounded_rectangle(
                 [(x0, y0), (x0 + fill_w, y1)],
-                radius=radius,
+                radius=fill_radius,
                 fill=color,
                 outline=None
             )
