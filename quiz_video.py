@@ -41,8 +41,8 @@ print(os.name)
 # ---------------------------------------------------------------------------
 WIDTH, HEIGHT = 1080, 1920  # TikTok vertical resolution
 
-QUESTION_DURATION = 10       # Sekunden für die Frage
-REVEAL_DURATION = 2.5         # Sekunden für das Reveal
+QUESTION_DURATION = 9       # Sekunden für die Frage
+REVEAL_DURATION = 2        # Sekunden für das Reveal
 N_ROUNDS = 5
 # Anzahl der Runden
 

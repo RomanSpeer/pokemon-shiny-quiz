@@ -11,12 +11,12 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# Jeder Upload wählt zufällig eine Variante, für etwas Abwechslung.
+# Each upload randomly picks a variant, for some variety.
 VARIANTS = [
     {
         "title": "Guess the Shiny Pokémon! ✨🔥 #Shorts",
         "description": (
-            "Kannst du das shiny Pokémon erraten, bevor die Zeit abläuft? "
+            "Can you guess which Pokémon is the Shiny one before time runs out? "
             "#Shorts #Pokemon #Shiny #Quiz"
         ),
         "tags": ["Pokemon", "Shiny", "Shorts", "Quiz"],
@@ -24,7 +24,7 @@ VARIANTS = [
     {
         "title": "Only a TRUE Pokémon fan can guess this! ⚡️ #Shorts",
         "description": (
-            "Errätst du das shiny Pokémon schneller als der Timer? "
+            "Can you guess the shiny Pokémon faster than the timer? "
             "#Shorts #Pokemon #PokemonQuiz #Shiny #Gaming"
         ),
         "tags": ["Pokemon", "PokemonQuiz", "Shorts", "Shiny", "Gaming"],
@@ -32,15 +32,15 @@ VARIANTS = [
     {
         "title": "Shiny Pokémon Quiz - How fast can YOU guess? 🎮",
         "description": (
-            "Neue Runde, neues shiny Pokémon! Schreib deinen Tipp in die "
-            "Kommentare. #Shorts #Pokemon #Shiny #Quiz #Nintendo"
+            "New round, new shiny Pokémon! Drop your guess in the comments. "
+            "#Shorts #Pokemon #Shiny #Quiz #Nintendo"
         ),
         "tags": ["Pokemon", "Shiny", "Quiz", "Shorts", "Nintendo"],
     },
     {
         "title": "Can you name this Shiny Pokémon in 3 seconds? ⏱️",
         "description": (
-            "Shiny Pokémon Ratespiel – testet dein Wissen! "
+            "Shiny Pokémon guessing game - put your knowledge to the test! "
             "#Shorts #Pokemon #Shiny #PokemonQuiz"
         ),
         "tags": ["Pokemon", "Shiny", "PokemonQuiz", "Shorts"],
@@ -79,9 +79,9 @@ def upload(video_path: str) -> None:
     while response is None:
         status, response = request.next_chunk()
         if status:
-            print(f"Upload-Fortschritt: {int(status.progress() * 100)}%")
+            print(f"Upload progress: {int(status.progress() * 100)}%")
 
-    print(f"YouTube-Video hochgeladen: https://youtube.com/watch?v={response['id']}")
+    print(f"YouTube video uploaded: https://youtube.com/watch?v={response['id']}")
 
 
 if __name__ == "__main__":
