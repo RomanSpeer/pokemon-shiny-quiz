@@ -343,10 +343,13 @@ def _build_healthbar(duration: float) -> VideoClip:
         )
 
         # Füllung von links: abgerundeter Balken mit der aktuellen Farbe
-        fill_w = max(1, int(bar_w * ratio))
+        fill_w = max(2, int(bar_w * ratio))
+        # Pillow <10 wirft einen ValueError in rounded_rectangle, wenn die
+        # Breite ungerade ist und radius == fill_w // 2 - daher auf gerade
+        # Breite runden.
+        if fill_w % 2:
+            fill_w -= 1
         if fill_w > 0:
-            # Radius darf nicht größer als die halbe Füllbreite sein, sonst
-            # wirft PIL bei sehr schmaler Füllung einen ValueError.
             fill_radius = min(radius, fill_w // 2)
             draw.rounded_rectangle(
                 [(x0, y0), (x0 + fill_w, y1)],
