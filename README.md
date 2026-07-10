@@ -51,8 +51,15 @@ Benötigte Repo-Secrets:
 - `YT_CLIENT_ID`, `YT_CLIENT_SECRET`, `YT_REFRESH_TOKEN` – per
   `python get_youtube_refresh_token.py` einmalig lokal erzeugen (siehe Docstring dort).
 - `YT_PLAYLIST_ID` *(optional)* – ohne dieses Secret wird der Playlist-Schritt
-  einfach übersprungen. Die ID findet sich in der Playlist-URL:
-  `youtube.com/playlist?list=PLxxxxxxxx` → der Teil nach `list=`.
+  einfach übersprungen. Playlist einmalig manuell in YouTube Studio anlegen:
+  - **Titel:** `Guess the Pokémon`
+  - **Beschreibung:** New mystery Pokémon every round. ⚡ Type chart, cry,
+    ability and a pixelated silhouette — piece together the clues before the
+    reveal. How fast can you name it? 🔴 Drop your guess in the comments and
+    see if you're a true Pokémon Master!
+    `#Shorts #Pokemon #PokemonQuiz #WhosThatPokemon`
+  - Die ID danach aus der Playlist-URL kopieren:
+    `youtube.com/playlist?list=PLxxxxxxxx` → der Teil nach `list=`.
 
 **Wichtig:** Das Hinzufügen zu einer Playlist braucht den Scope
 `youtube.force-ssl`, reines `youtube.upload` reicht dafür nicht. Falls dein
