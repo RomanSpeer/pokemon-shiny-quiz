@@ -54,6 +54,10 @@ VARIANTS = [
 ]
 CATEGORY_ID = "24"  # Entertainment
 
+# CinderyLofi's own video description grants free use of these tracks in
+# videos/content as long as credit is given - so every upload credits them.
+MUSIC_CREDIT = "\n\n🎵 Music: lo-fi Pokémon arrangements by CinderyLofi - https://www.youtube.com/@CinderyLofi"
+
 
 def add_to_playlist(youtube, video_id: str, playlist_id: str) -> None:
     youtube.playlistItems().insert(
@@ -81,7 +85,7 @@ def upload(video_path: str) -> None:
     body = {
         "snippet": {
             "title": variant["title"],
-            "description": variant["description"],
+            "description": variant["description"] + MUSIC_CREDIT,
             "tags": variant["tags"],
             "categoryId": CATEGORY_ID,
         },
