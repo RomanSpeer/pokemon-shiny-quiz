@@ -1,6 +1,9 @@
 """Upload a video to YouTube as a Short.
 
 Requires env vars: YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN.
+Optional env var: YT_PLAYLIST_ID - if set, the uploaded video is added to
+that playlist (requires the refresh token to include the youtube.force-ssl
+scope, not just youtube.upload).
 See get_youtube_refresh_token.py for how to obtain the refresh token once.
 """
 import argparse
@@ -48,6 +51,9 @@ VARIANTS = [
 ]
 CATEGORY_ID = "24"  # Entertainment
 
+# Required by the music license (CinderyLofi allows free use, credit required).
+MUSIC_CREDIT = "Music: @CinderyLofi (https://www.youtube.com/@CinderyLofi)"
+
 
 def upload(video_path: str) -> None:
     creds = Credentials(
@@ -60,10 +66,11 @@ def upload(video_path: str) -> None:
     youtube = build("youtube", "v3", credentials=creds)
 
     variant = random.choice(VARIANTS)
+    description = f"{variant['description']}\n\n{MUSIC_CREDIT}"
     body = {
         "snippet": {
             "title": variant["title"],
-            "description": variant["description"],
+            "description": description,
             "tags": variant["tags"],
             "categoryId": CATEGORY_ID,
         },
@@ -81,7 +88,21 @@ def upload(video_path: str) -> None:
         if status:
             print(f"Upload progress: {int(status.progress() * 100)}%")
 
-    print(f"YouTube video uploaded: https://youtube.com/watch?v={response['id']}")
+    video_id = response["id"]
+    print(f"YouTube video uploaded: https://youtube.com/watch?v={video_id}")
+
+    playlist_id = os.environ.get("YT_PLAYLIST_ID")
+    if playlist_id:
+        youtube.playlistItems().insert(
+            part="snippet",
+            body={
+                "snippet": {
+                    "playlistId": playlist_id,
+                    "resourceId": {"kind": "youtube#video", "videoId": video_id},
+                }
+            },
+        ).execute()
+        print(f"Added to playlist {playlist_id}")
 
 
 if __name__ == "__main__":

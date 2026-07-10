@@ -11,7 +11,12 @@
 """
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+# youtube.force-ssl is needed in addition to youtube.upload so the token can
+# also add uploaded videos to a playlist (YT_PLAYLIST_ID).
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+]
 
 if __name__ == "__main__":
     flow = InstalledAppFlow.from_client_secrets_file("client_secret.json", SCOPES)
