@@ -3,7 +3,7 @@ and, later, the automated posting workflow).
 
 1. In the TikTok Developer Portal, make sure your app has:
    - Login Kit enabled, with this exact redirect URI registered:
-     https://romanspeer.github.io/pokemon-quiz-video/oauth-callback.html
+     https://romanspeer.github.io/pokemon-quiz-video/oauth-callback
    - Content Posting API enabled, with "Direct Post" turned on.
    - Your own TikTok account added as a Sandbox target user (App details ->
      Sandbox tab) - required since the app isn't audited yet, otherwise the
@@ -27,7 +27,7 @@ import urllib.parse
 
 import requests
 
-REDIRECT_URI = "https://romanspeer.github.io/pokemon-quiz-video/oauth-callback.html"
+REDIRECT_URI = "https://romanspeer.github.io/pokemon-quiz-video/oauth-callback"
 SCOPES = "user.info.basic,video.upload,video.publish"
 
 AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/"
