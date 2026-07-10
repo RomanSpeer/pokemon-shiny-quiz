@@ -6,7 +6,7 @@ on:
     # 3x täglich zu US-Stoßzeiten (Morning/Lunch/Evening ET).
     # UTC ist fix, ET pendelt durch DST zwischen UTC-4/-5 -> Zeiten können
     # je nach Jahreszeit um bis zu 1h von der ET-Zielzeit abweichen.
-    - cron: "0 12,16,23 * * *"
+    - cron: "0 12,16 * * *"
 
 jobs:
   generate-video:
