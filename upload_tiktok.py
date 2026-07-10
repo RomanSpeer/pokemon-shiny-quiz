@@ -47,8 +47,10 @@ def _get_access_token() -> str:
         },
         timeout=15,
     )
-    resp.raise_for_status()
-    return resp.json()["access_token"]
+    data = resp.json()
+    if "access_token" not in data:
+        raise RuntimeError(f"Token refresh failed: {data}")
+    return data["access_token"]
 
 
 def upload(video_path: str) -> None:
