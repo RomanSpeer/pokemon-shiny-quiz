@@ -79,7 +79,8 @@ def upload(video_path: str) -> None:
         },
         timeout=15,
     )
-    init_resp.raise_for_status()
+    if not init_resp.ok:
+        raise RuntimeError(f"Video init failed ({init_resp.status_code}): {init_resp.text}")
     init_data = init_resp.json()["data"]
     publish_id = init_data["publish_id"]
     upload_url = init_data["upload_url"]
@@ -93,7 +94,8 @@ def upload(video_path: str) -> None:
         data=video_bytes,
         timeout=120,
     )
-    put_resp.raise_for_status()
+    if not put_resp.ok:
+        raise RuntimeError(f"Video upload failed ({put_resp.status_code}): {put_resp.text}")
 
     print(f"TikTok upload initiated: publish_id={publish_id}, privacy_level={privacy_level}")
 
