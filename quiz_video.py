@@ -41,10 +41,19 @@ print(os.name)
 # ---------------------------------------------------------------------------
 WIDTH, HEIGHT = 1080, 1920  # TikTok vertical resolution
 
-QUESTION_DURATION = 9       # Sekunden für die Frage
+QUESTION_DURATION = 7       # Sekunden für die Frage
 REVEAL_DURATION = 2        # Sekunden für das Reveal
 N_ROUNDS = 5
 # Anzahl der Runden
+
+# Mix der Rundentypen (Gewichte müssen nicht auf 1 summieren, werden normalisiert)
+ROUND_TYPE_WEIGHTS = {
+    "species": 0.4,      # 4 verschiedene Pokémon, eines shiny -> welches ist shiny?
+    "color_shift": 0.4,  # 1 Pokémon 4x, 3x Hue-verschoben -> welches ist die echte Farbe?
+    "cry": 0.2,           # 4 Silhouetten, Cry-Sound einer davon -> welches Pokémon ruft?
+}
+HUE_SHIFT_MIN_DEGREES = 25
+HUE_SHIFT_MAX_DEGREES = 150
 
 # Fonts (müssen von ImageMagick verstanden werden)
 # Wenn du eine echte Pokémon-Font installiert hast, trag sie hier ein.
@@ -180,19 +189,23 @@ def _is_valid_pokemon_dir(p: Path) -> bool:
 # ---------------------------------------------------------------------------
 # Helper: GIF einmal via FFmpeg dekodieren, dann endlos loopen
 # ---------------------------------------------------------------------------
-def _load_gif_clip_ffmpeg_loop(path: Path, desired_duration: float) -> VideoClip:
+def _load_gif_clip_ffmpeg_loop(path: Path, desired_duration: float, color_transform=None) -> VideoClip:
     """
     Lädt ein GIF mit VideoFileClip(has_mask=True), sammelt alle Frames
     (und ggf. Maskenframes) ein und baut daraus einen eigenen VideoClip,
     der die Frames endlos loopen kann (t -> t % orig_dur), ohne FFmpeg
     für lange Loops zu benutzen.
+
+    color_transform: optionale Funktion (RGB-Frame -> RGB-Frame), z.B. für
+    Hue-Shift oder Silhouette-Effekte. Die Transparenzmaske bleibt davon
+    unberührt.
     """
     base = VideoFileClip(str(path), has_mask=True)
     fps = base.fps or 25
 
     frames_rgb = []
     for frame in base.iter_frames(fps=fps):
-        frames_rgb.append(frame)
+        frames_rgb.append(color_transform(frame) if color_transform else frame)
 
     if not frames_rgb:
         base.close()
@@ -222,10 +235,34 @@ def _load_gif_clip_ffmpeg_loop(path: Path, desired_duration: float) -> VideoClip
     return clip.set_duration(desired_duration)
 
 
+def _hue_shift_frame(frame_rgb: np.ndarray, degrees: float) -> np.ndarray:
+    """Rotiert den Farbton (Hue) eines RGB-Frames um `degrees`."""
+    img = Image.fromarray(frame_rgb, "RGB").convert("HSV")
+    h, s, v = img.split()
+    shift = int(round(degrees / 360 * 255))
+    h_arr = (np.array(h).astype(np.int16) + shift) % 256
+    h_new = Image.fromarray(h_arr.astype(np.uint8), "L")
+    shifted = Image.merge("HSV", (h_new, s, v)).convert("RGB")
+    return np.array(shifted)
+
+
+def _silhouette_frame(frame_rgb: np.ndarray) -> np.ndarray:
+    """Ersetzt alle Pixel durch ein einheitliches Dunkelgrau (Silhouette).
+    Die Transparenzmaske bleibt unverändert, sodass nur die sichtbare Form
+    übrig bleibt."""
+    return np.full_like(frame_rgb, 30)
+
+
 # ---------------------------------------------------------------------------
 # Helper: Quadranten aus GIFs bauen (FFmpeg -> eigener Loop-Clip)
 # ---------------------------------------------------------------------------
-def _build_quadrants(duration: float, gif_paths: list[str], pop_scale: bool = False, fixed_scale: float = None):
+def _build_quadrants(
+    duration: float,
+    gif_paths: list[str],
+    pop_scale: bool = False,
+    fixed_scale: float = None,
+    color_transforms: list = None,
+):
     """
     Erzeugt vier Quadranten aus GIF-Dateien:
 
@@ -243,8 +280,11 @@ def _build_quadrants(duration: float, gif_paths: list[str], pop_scale: bool = Fa
     sprite_max_w = quad_w * SPRITE_QUAD_RATIO
     sprite_max_h = quad_h * SPRITE_QUAD_RATIO
 
-    for path_str, pos in zip(gif_paths, positions):
-        clip = _load_gif_clip_ffmpeg_loop(Path(path_str), duration)
+    if color_transforms is None:
+        color_transforms = [None] * len(gif_paths)
+
+    for path_str, pos, color_transform in zip(gif_paths, positions, color_transforms):
+        clip = _load_gif_clip_ffmpeg_loop(Path(path_str), duration, color_transform=color_transform)
 
         desired_scale_w = sprite_max_w / clip.w
         desired_scale_h = sprite_max_h / clip.h
@@ -433,16 +473,70 @@ def _build_countdown(duration: float) -> VideoClip:
 # ---------------------------------------------------------------------------
 # Helper: eine Quiz-Runde
 # ---------------------------------------------------------------------------
-def _create_round(pokemon_dirs, background_frame):
+def _average_color(gif_path: Path) -> np.ndarray:
+    """Durchschnittsfarbe des ersten Frames, transparente Pixel ausgeschlossen."""
+    with Image.open(gif_path) as im:
+        arr = np.array(im.convert("RGBA"))
+    rgb = arr[..., :3].astype(np.float64)
+    mask = arr[..., 3] > 10
+    if not mask.any():
+        mask = np.ones(arr.shape[:2], dtype=bool)
+    return rgb[mask].mean(axis=0)
+
+
+def _shiny_color_distance(pokemon_dir: Path) -> float:
+    """Je kleiner der Wert, desto ähnlicher sehen normal.gif und shiny.gif
+    sich - also desto schwerer ist die Runde für dieses Pokémon."""
+    normal_color = _average_color(pokemon_dir / "normal.gif")
+    shiny_color = _average_color(pokemon_dir / "shiny.gif")
+    return float(np.linalg.norm(normal_color - shiny_color))
+
+
+MIN_SHINY_COLOR_DISTANCE = 8.0  # unterhalb dessen gilt normal/shiny als (fast) ununterscheidbar
+
+MIN_SHINY_SATURATION = 60.0  # unterhalb dessen ist ein Hue-Shift kaum sichtbar (z.B. sehr dunkle Shinys)
+COLOR_SHIFT_PICK_ATTEMPTS = 6
+
+
+def _average_saturation(gif_path: Path) -> float:
+    """Durchschnittliche HSV-Sättigung des ersten Frames, transparente Pixel
+    ausgeschlossen. Bei niedriger Sättigung (Grau-/Schwarztöne) ist ein
+    Hue-Shift kaum sichtbar."""
+    with Image.open(gif_path) as im:
+        arr = np.array(im.convert("RGBA"))
+    mask = arr[..., 3] > 10
+    if not mask.any():
+        mask = np.ones(arr.shape[:2], dtype=bool)
+    hsv = np.array(Image.fromarray(arr[..., :3], "RGB").convert("HSV"))
+    return float(hsv[..., 1][mask].mean())
+
+
+def _pick_round_type() -> str:
+    types = list(ROUND_TYPE_WEIGHTS.keys())
+    weights = list(ROUND_TYPE_WEIGHTS.values())
+    return random.choices(types, weights=weights, k=1)[0]
+
+
+def _prepare_species_round(pokemon_dirs, color_distances):
+    """4 verschiedene Pokémon, eines shiny - welches ist shiny?"""
     selected_dirs = random.sample(pokemon_dirs, k=4)
 
-    shiny_dir = random.choice(selected_dirs)
+    # Gewichtete Zufallsauswahl: Pokémon mit geringem Farbunterschied
+    # zwischen normal/shiny werden bevorzugt (schwerer zu erraten), aber
+    # nicht ausschließlich, damit auch leichtere Runden vorkommen. Kandidaten
+    # mit (fast) identischen Farben (defekte Assets) werden als Shiny-Antwort
+    # ausgeschlossen, da das Rätsel sonst unlösbar wäre - sie bleiben aber
+    # als normale Decoys zulässig.
+    shiny_candidates = [
+        d for d in selected_dirs
+        if color_distances.get(d, 100.0) >= MIN_SHINY_COLOR_DISTANCE
+    ] or selected_dirs
+    epsilon = 5.0
+    weights = [1.0 / (color_distances.get(d, 100.0) + epsilon) for d in shiny_candidates]
+    shiny_dir = random.choices(shiny_candidates, weights=weights, k=1)[0]
     shiny_path = shiny_dir / "shiny.gif"
     if not shiny_path.is_file():
         raise FileNotFoundError(f"Shiny GIF not found: {shiny_path}")
-
-    cry_path = shiny_dir / "cry.ogg"
-    cry_str = str(cry_path) if cry_path.is_file() else None
 
     normal_dirs = [d for d in selected_dirs if d != shiny_dir]
     normal_paths = []
@@ -452,8 +546,92 @@ def _create_round(pokemon_dirs, background_frame):
             raise FileNotFoundError(f"Normal GIF not found: {normal_path}")
         normal_paths.append(normal_path)
 
-    gif_order = [str(shiny_path)] + [str(p) for p in normal_paths]
-    random.shuffle(gif_order)
+    entries = [(str(shiny_path), None)] + [(str(p), None) for p in normal_paths]
+    random.shuffle(entries)
+
+    cry_path = shiny_dir / "cry.ogg"
+    return {
+        "gif_paths": [e[0] for e in entries],
+        "color_transforms": [e[1] for e in entries],
+        "guess_label": "Guess the Shiny",
+        "shiny_path": shiny_path,
+        "cry_str": str(cry_path) if cry_path.is_file() else None,
+        "question_cry_offset": None,
+        "mute_pokeball_sfx": False,
+    }
+
+
+def _prepare_color_shift_round(pokemon_dirs):
+    """1 Pokémon 4x gezeigt, 3x mit verschobenem Hue - welches ist die echte Farbe?"""
+    pokemon_dir = random.choice(pokemon_dirs)
+    shiny_path = pokemon_dir / "shiny.gif"
+    if not shiny_path.is_file():
+        raise FileNotFoundError(f"Shiny GIF not found: {shiny_path}")
+
+    entries = [(str(shiny_path), None)]
+    for _ in range(3):
+        degrees = random.uniform(HUE_SHIFT_MIN_DEGREES, HUE_SHIFT_MAX_DEGREES)
+        degrees *= random.choice([-1, 1])
+        entries.append(
+            (str(shiny_path), lambda frame, d=degrees: _hue_shift_frame(frame, d))
+        )
+    random.shuffle(entries)
+
+    cry_path = pokemon_dir / "cry.ogg"
+    return {
+        "gif_paths": [e[0] for e in entries],
+        "color_transforms": [e[1] for e in entries],
+        "guess_label": "Spot the REAL Shiny!",
+        "shiny_path": shiny_path,
+        "cry_str": str(cry_path) if cry_path.is_file() else None,
+        "question_cry_offset": None,
+        "mute_pokeball_sfx": False,
+    }
+
+
+def _prepare_cry_round(pokemon_dirs):
+    """4 Silhouetten, Cry-Sound einer davon - welches Pokémon ruft?"""
+    selected_dirs = random.sample(pokemon_dirs, k=4)
+    answer_dir = random.choice(selected_dirs)
+
+    entries = []
+    for d in selected_dirs:
+        normal_path = d / "normal.gif"
+        if not normal_path.is_file():
+            raise FileNotFoundError(f"Normal GIF not found: {normal_path}")
+        entries.append((str(normal_path), _silhouette_frame))
+    random.shuffle(entries)
+
+    shiny_path = answer_dir / "shiny.gif"
+    cry_path = answer_dir / "cry.ogg"
+    return {
+        "gif_paths": [e[0] for e in entries],
+        "color_transforms": [e[1] for e in entries],
+        "guess_label": "Guess by the Cry!",
+        "shiny_path": shiny_path,
+        "cry_str": str(cry_path) if cry_path.is_file() else None,
+        # Marker: wird unten zu zwei tatsächlichen Zeitpunkten aufgelöst,
+        # sobald pokeball_duration bekannt ist.
+        "question_cry_offset": True,
+        # Pokéball-SFX würde den Cry übertönen -> für diesen Rundentyp stumm.
+        "mute_pokeball_sfx": True,
+    }
+
+
+def _create_round(pokemon_dirs, background_frame, color_distances, round_type=None):
+    round_type = round_type or _pick_round_type()
+
+    if round_type == "color_shift":
+        setup = _prepare_color_shift_round(pokemon_dirs)
+    elif round_type == "cry":
+        setup = _prepare_cry_round(pokemon_dirs)
+    else:
+        setup = _prepare_species_round(pokemon_dirs, color_distances)
+
+    gif_order = setup["gif_paths"]
+    color_transforms = setup["color_transforms"]
+    shiny_path = setup["shiny_path"]
+    cry_str = setup["cry_str"]
 
     # -------------------- Teil 1: Frage --------------------
     elements_q = []
@@ -489,12 +667,24 @@ def _create_round(pokemon_dirs, background_frame):
     else:
         print("Hinweis: Pokéball-Animation wird nicht verwendet (Datei fehlt oder FFmpeg mag sie nicht).")
 
+    if setup["mute_pokeball_sfx"]:
+        pokeball_sfx_offset = None
+
+    # Cry beim Cry-Rundentyp 2x während der Fragephase abspielen (direkt
+    # beim Erscheinen der Silhouetten, dann nochmal auf halber Strecke),
+    # damit er trotz stummgeschaltetem Pokéball-SFX gut hörbar ist.
+    question_cry_offsets = None
+    if setup["question_cry_offset"] is not None:
+        remaining = QUESTION_DURATION - pokeball_duration
+        question_cry_offsets = [pokeball_duration, pokeball_duration + remaining / 2]
+
     pokemon_duration = QUESTION_DURATION - pokeball_duration
     pokemon_quads = _build_quadrants(
         pokemon_duration,
         gif_order,
         pop_scale=True,
         fixed_scale=None,
+        color_transforms=color_transforms,
     )
     pokemon_quads = [c.set_start(pokeball_duration).fx(vfx.fadein, 0.2) for c in pokemon_quads]
     elements_q.extend(pokemon_quads)
@@ -504,8 +694,8 @@ def _create_round(pokemon_dirs, background_frame):
         size=(WIDTH, HEIGHT)
     ).set_duration(QUESTION_DURATION)
 
-    # Text "Guess the Shiny" mittig über der Healthbar (Pillow + Pokémon-Font)
-    guess_text = _build_guess_text_clip("Guess the Shiny", QUESTION_DURATION)
+    # Guess-Text (rundentyp-abhängig) mittig über der Healthbar (Pillow + Pokémon-Font)
+    guess_text = _build_guess_text_clip(setup["guess_label"], QUESTION_DURATION)
 
     # Healthbar mittig
     healthbar_clip = _build_healthbar(QUESTION_DURATION)
@@ -536,8 +726,10 @@ def _create_round(pokemon_dirs, background_frame):
 
     round_clip = concatenate_videoclips([question_clip, reveal_clip])
 
-    # Rückgabe: Video-Clip, Cry-Audio-Pfad, Pokéball-SFX-Offset (innerhalb der Runde)
-    return round_clip, cry_str, pokeball_sfx_offset
+    # Rückgabe: Video-Clip, Cry-Audio-Pfad, Pokéball-SFX-Offset, Liste von
+    # Cry-Offsets während der Fragephase (nur beim Cry-Rundentyp gesetzt) -
+    # jeweils Zeitpunkte innerhalb der Runde.
+    return round_clip, cry_str, pokeball_sfx_offset, question_cry_offsets
 
 
 # ---------------------------------------------------------------------------
@@ -556,17 +748,30 @@ def create_quiz_video(output_path: str = "quiz.mp4"):
 
     print(f"{len(pokemon_dirs)} gültige Pokémon-Ordner gefunden.")
 
+    print("Berechne Shiny/Normal-Farbunterschiede...")
+    color_distances = {}
+    for d in pokemon_dirs:
+        try:
+            color_distances[d] = _shiny_color_distance(d)
+        except Exception:
+            color_distances[d] = 100.0
+    print(f"Farbunterschiede für {len(color_distances)} Pokémon berechnet.")
+
     background_frame = _load_random_background_frame()
 
     rounds = []
     cry_paths = []
     pokeball_offsets = []
+    question_cry_offsets_per_round = []
 
     for round_idx in range(N_ROUNDS):
-        round_clip, cry_path, pokeball_offset = _create_round(pokemon_dirs, background_frame)
+        round_clip, cry_path, pokeball_offset, question_cry_offsets = _create_round(
+            pokemon_dirs, background_frame, color_distances
+        )
         rounds.append(round_clip)
         cry_paths.append(cry_path)
         pokeball_offsets.append(pokeball_offset)
+        question_cry_offsets_per_round.append(question_cry_offsets)
         print(f"Runde {round_idx + 1} erzeugt.")
 
     final = concatenate_videoclips(rounds)
@@ -593,7 +798,9 @@ def create_quiz_video(output_path: str = "quiz.mp4"):
         print("Hinweis: BACKGROUND_MUSIC_DIR existiert nicht.")
 
     current_start = 0.0
-    for round_clip, cry_path, pokeball_offset in zip(rounds, cry_paths, pokeball_offsets):
+    for round_clip, cry_path, pokeball_offset, question_cry_offsets in zip(
+        rounds, cry_paths, pokeball_offsets, question_cry_offsets_per_round
+    ):
         # Cry-Sound im Reveal
         if cry_path:
             cry = AudioFileClip(cry_path)
@@ -602,15 +809,22 @@ def create_quiz_video(output_path: str = "quiz.mp4"):
             cry = cry.set_start(current_start + reveal_start_in_round)
             audio_clips.append(cry)
 
-        # Pokéball-SFX in der Fragephase, zur Hälfte der Pokéball-Duration
-        if pokeball_offset is not None:
-            print("Pokeball-Offset für Runde:", pokeball_offset, "SFX-Pfad existiert:", POKEBALL_SFX_PATH.is_file())
+        # Cry-Sound schon während der Fragephase (Cry-Rundentyp), 2x damit er
+        # trotz stummgeschaltetem Pokéball-SFX gut hörbar ist
+        if cry_path and question_cry_offsets:
+            for offset in question_cry_offsets:
+                question_cry = AudioFileClip(cry_path)
+                question_cry = question_cry.subclip(
+                    0, min(question_cry.duration, QUESTION_DURATION - offset)
+                )
+                question_cry = question_cry.set_start(current_start + offset)
+                audio_clips.append(question_cry)
 
+        # Pokéball-SFX in der Fragephase, zur Hälfte der Pokéball-Duration
         if pokeball_offset is not None and POKEBALL_SFX_PATH.is_file():
             sfx = AudioFileClip(str(POKEBALL_SFX_PATH))
             sfx = sfx.set_start(current_start + pokeball_offset)
             audio_clips.append(sfx)
-
 
         current_start += round_clip.duration
 

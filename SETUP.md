@@ -23,6 +23,19 @@ variables → Actions → New repository secret).
    - `YT_CLIENT_SECRET`
    - `YT_REFRESH_TOKEN`
 
+## Playlist (optional)
+
+Damit jedes hochgeladene Video automatisch einer Playlist hinzugefügt wird:
+
+1. Playlist-ID aus der YouTube-URL kopieren (`https://www.youtube.com/playlist?list=`**`PLxxxxxxxx`**).
+2. Als Secret `YT_PLAYLIST_ID` speichern.
+
+Falls dein `YT_REFRESH_TOKEN` bereits **vor** diesem Feature erzeugt wurde,
+reicht das Secret allein nicht: `get_youtube_refresh_token.py` fordert jetzt
+zusätzlich den Scope `youtube.force-ssl` an (nötig, um Videos zu Playlists
+hinzuzufügen). In dem Fall `get_youtube_refresh_token.py` erneut ausführen
+und `YT_REFRESH_TOKEN` mit dem neuen Wert überschreiben.
+
 ## Testen
 
 Workflow manuell über "Run workflow" (workflow_dispatch) starten und den
