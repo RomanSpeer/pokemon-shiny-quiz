@@ -61,8 +61,13 @@ jobs:
 
       - name: Upload to YouTube Shorts
         env:
-          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
-          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
-          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
-          YT_PLAYLIST_ID: ${{ secrets.YT_PLAYLIST_ID }}
+          # NOTE: renamed from YT_* to CLASSIC_YT_* to avoid colliding with
+          # the shiny-quiz format's YT_* secrets now that both live in the
+          # same repo. If both formats actually upload to the SAME YouTube
+          # channel, you can instead delete this prefix and reuse the
+          # existing YT_* secrets below.
+          YT_CLIENT_ID: ${{ secrets.CLASSIC_YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.CLASSIC_YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.CLASSIC_YT_REFRESH_TOKEN }}
+          YT_PLAYLIST_ID: ${{ secrets.CLASSIC_YT_PLAYLIST_ID }}
         run: python upload_youtube.py --video "${{ steps.video.outputs.path }}"
