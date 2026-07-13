@@ -11,6 +11,9 @@ on:
 jobs:
   generate-video:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: formats/shiny-quiz
 
     steps:
       - name: Checkout repo
@@ -59,7 +62,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: shiny-quiz-video
-          path: output.mp4
+          path: formats/shiny-quiz/output.mp4
 
       - name: Upload to YouTube Shorts
         env:
