@@ -2,11 +2,14 @@ name: Generate stat comparison video
 
 on:
   workflow_dispatch: {}
-  schedule:
-    # 1x täglich, abends zu US-Stoßzeiten (ET).
-    # UTC ist fix, ET pendelt durch DST zwischen UTC-4/-5 -> Zeit kann
-    # je nach Jahreszeit um bis zu 1h von der ET-Zielzeit abweichen.
-    - cron: "0 20 * * *"
+  # Cron-Trigger vorübergehend deaktiviert: das stat_compare-Rundenformat
+  # ist noch nicht fertig. Der Abend-Slot (0 20 * * *) läuft solange
+  # stattdessen über shiny-species-cry.yml. Weiterhin manuell über
+  # "Run workflow" (workflow_dispatch) testbar. Sobald fertig, einfach den
+  # untenstehenden schedule-Block wieder einkommentieren und den zweiten
+  # cron-Eintrag in shiny-species-cry.yml entfernen.
+  # schedule:
+  #   - cron: "0 20 * * *"
 
 jobs:
   generate-video:

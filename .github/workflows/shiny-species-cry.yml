@@ -3,10 +3,13 @@ name: Generate shiny quiz video
 on:
   workflow_dispatch: {}
   schedule:
-    # 1x täglich, vormittags zu US-Stoßzeiten (ET).
+    # 2x täglich, vormittags und abends zu US-Stoßzeiten (ET).
     # UTC ist fix, ET pendelt durch DST zwischen UTC-4/-5 -> Zeit kann
     # je nach Jahreszeit um bis zu 1h von der ET-Zielzeit abweichen.
     - cron: "0 12 * * *"
+    # Übernimmt vorübergehend den Abend-Slot von shiny-stat-compare.yml,
+    # solange das stat_compare-Rundenformat noch nicht fertig ist.
+    - cron: "0 20 * * *"
 
 jobs:
   generate-video:
