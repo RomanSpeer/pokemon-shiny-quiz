@@ -1,0 +1,68 @@
+name: Generate Pokémon quiz video
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # 1x täglich zur US-Abend-Primetime (Evening ET).
+    # UTC ist fix, ET pendelt durch DST zwischen UTC-4/-5 -> Zeit kann
+    # je nach Jahreszeit um bis zu 1h von der ET-Zielzeit abweichen.
+    - cron: "0 23 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  generate-video:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: formats/classic-quiz
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies (ffmpeg, Arial-compatible fonts)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-liberation
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
+
+      - name: Generate video
+        run: python main.py
+
+      - name: Locate generated video
+        id: video
+        run: echo "path=$(ls output/*.mp4 | head -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Record used Pokémon
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add used_pokemon.json
+          git diff --staged --quiet || git commit -m "Record used Pokémon: $(basename "${{ steps.video.outputs.path }}")"
+          git push
+
+      - name: Upload video as artifact (zum Testen)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pokemon-quiz-video
+          path: formats/classic-quiz/${{ steps.video.outputs.path }}
+
+      - name: Upload to YouTube Shorts
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_PLAYLIST_ID: ${{ secrets.YT_PLAYLIST_ID }}
+        run: python upload_youtube.py --video "${{ steps.video.outputs.path }}"

@@ -16,23 +16,23 @@ __pycache__/
 *.ogg
 *.wav
 *.log
+formats/classic-quiz/output/
 
-# Downloaded assets (Pokémon-Sprites etc.)
-assets/
-assets 2/
-assets.tar.gz
-fonts/
-music/
-background_images/
+# Downloaded assets (shiny-quiz format: Pokémon-Sprites etc.)
+formats/shiny-quiz/assets/
+formats/shiny-quiz/assets 2/
+formats/shiny-quiz/assets.tar.gz
+formats/shiny-quiz/fonts/
+formats/shiny-quiz/music/
+formats/shiny-quiz/background_images/
+formats/shiny-quiz/cache/
 
 # Credentials
 client_secret.json
 token.json
 *.token
+tiktok_credentials.json
 
 # OS / Editor cruft
 .DS_Store
 .claude/settings.local.json
-
-# TikTok / other secrets (classic-quiz format)
-tiktok_credentials.json
