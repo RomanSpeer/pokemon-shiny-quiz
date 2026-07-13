@@ -1,5 +1,38 @@
+# Python venv
 .venv/
-output/
+venv/
+env/
+
+# Python-Cache
 __pycache__/
 *.pyc
+
+# IDE/Editor
+.idea/
+.vscode/
+
+# Video/Audio-Output
+*.mp4
+*.ogg
+*.wav
+*.log
+formats/classic-quiz/output/
+
+# Downloaded assets (shiny-quiz format: Pokémon-Sprites etc.)
+formats/shiny-quiz/assets/
+formats/shiny-quiz/assets 2/
+formats/shiny-quiz/assets.tar.gz
+formats/shiny-quiz/fonts/
+formats/shiny-quiz/music/
+formats/shiny-quiz/background_images/
+formats/shiny-quiz/cache/
+
+# Credentials
+client_secret.json
+token.json
+*.token
+tiktok_credentials.json
+
+# OS / Editor cruft
 .DS_Store
+.claude/settings.local.json
