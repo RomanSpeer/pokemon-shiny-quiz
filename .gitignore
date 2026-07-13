@@ -18,14 +18,12 @@ __pycache__/
 *.log
 formats/classic-quiz/output/
 
-# Downloaded assets (shiny-quiz format: Pokémon-Sprites etc.)
+# Downloaded assets (shiny-quiz format: Pokémon-Sprites, Fonts, Audio,
+# Backgrounds - nicht im Repo, sondern als assets.tar.gz GitHub-Release-Asset
+# gepflegt und im CI-Workflow heruntergeladen, siehe SETUP.md)
 formats/shiny-quiz/assets/
-formats/shiny-quiz/assets 2/
 formats/shiny-quiz/assets.tar.gz
-formats/shiny-quiz/fonts/
-formats/shiny-quiz/music/
-formats/shiny-quiz/background_images/
-formats/shiny-quiz/cache/
+formats/shiny-quiz/_PLEASE_DELETE_ME/
 
 # Credentials
 client_secret.json

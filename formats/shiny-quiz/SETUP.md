@@ -2,10 +2,10 @@
 
 Es gibt zwei getrennte, täglich laufende Pipelines/Videos:
 
-- [.github/workflows/generate-and-upload.yml](.github/workflows/generate-and-upload.yml)
+- [../../.github/workflows/shiny-species-cry.yml](../../.github/workflows/shiny-species-cry.yml)
   (`cron: 0 12 * * *`, UTC) - das Shiny-Quiz-Video (Species-Guess,
   Color-Shift, Cry-Guess gemischt).
-- [.github/workflows/generate-and-upload-stats.yml](.github/workflows/generate-and-upload-stats.yml)
+- [../../.github/workflows/shiny-stat-compare.yml](../../.github/workflows/shiny-stat-compare.yml)
   (`cron: 0 20 * * *`, UTC) - das eigenständige Stat-Vergleich-Video
   (`quiz_video.py --round-type stat_compare`).
 
@@ -44,6 +44,35 @@ zusätzlich den Scope `youtube.force-ssl` an (nötig, um Videos zu Playlists
 hinzuzufügen). In dem Fall `get_youtube_refresh_token.py` erneut ausführen
 und `YT_REFRESH_TOKEN` mit dem neuen Wert überschreiben.
 
+## Assets (Pokémon-Sprites, Fonts, Audio, Hintergründe)
+
+Die Assets liegen **nicht im Repo** (bewusst weiterhin `.gitignore`d), sondern
+werden lokal unter `assets/` gehalten und als `assets.tar.gz` an ein
+GitHub Release gehängt. Der Workflow lädt dieses Release-Asset bei jedem Lauf
+herunter und entpackt es (siehe "Download assets from latest release"-Step) -
+daran ändert sich durch die interne Neusortierung nichts.
+
+Struktur seit der Umstrukturierung:
+
+```
+assets/
+  pokemon/<name>/normal.gif, shiny.gif   (bisher: assets/<name>/...)
+  fonts/pokemon/PokemonSolid.ttf          (bisher: fonts/pokemon/...)
+  audio/music/*.mp3                       (bisher: music/video_background_music/...)
+  audio/sfx/pokeball.mp3                  (bisher: music/sound_effects/...)
+  backgrounds/images/*                    (bisher: background_images/backgrounds/...)
+  backgrounds/animations/pokeball_animation.gif
+```
+
+**Wichtig:** Das aktuelle Release-Asset `assets.tar.gz` wurde mit der alten
+Struktur gepackt und passt nicht mehr zum Code. Vor dem nächsten Workflow-Lauf
+neu packen und das Release-Asset ersetzen:
+
+```
+tar czf assets.tar.gz assets
+gh release upload <tag> assets.tar.gz --clobber
+```
+
 ## Stat-Vergleich-Runde (stat_compare)
 
 Einer der vier Rundentypen in `quiz_video.py` vergleicht Basiswerte
@@ -58,7 +87,7 @@ python fetch_pokemon_stats.py
 
 Danach `data/pokemon_stats.json` committen. Ohne diese Datei überspringt
 `quiz_video.py` den `stat_compare`-Rundentyp automatisch. Das Skript nach
-jeder Änderung an `assets/` erneut laufen lassen (fügt neue/aktualisiert
+jeder Änderung an `assets/pokemon/` erneut laufen lassen (fügt neue/aktualisiert
 bestehende Einträge hinzu, ohne alles neu abzufragen wäre aufwendiger -
 aktuell wird komplett neu geschrieben).
 

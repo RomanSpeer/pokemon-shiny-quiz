@@ -87,7 +87,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 # Passe den Dateinamen exakt an das an, was bei dir liegt:
 # z.B. Pokemon Solid.ttf, PokemonSolid.ttf, PokemonSolid.otf, etc.
-FONT_PATH = BASE_DIR / "fonts" / "pokemon" / "PokemonSolid.ttf"
+FONT_PATH = BASE_DIR / "assets" / "fonts" / "pokemon" / "PokemonSolid.ttf"
 
 print("Font path:", FONT_PATH)
 print("Font exists:", FONT_PATH.is_file())
@@ -100,14 +100,14 @@ TEXT_COLOR = "white"
 COUNTDOWN_FONT_SIZE = 70
 
 # Hintergrundmusik & Soundeffekte
-BACKGROUND_MUSIC_DIR = Path("music/video_background_music")
-POKEBALL_SFX_PATH = Path("music/sound_effects/pokeball.mp3")
+BACKGROUND_MUSIC_DIR = Path("assets/audio/music")
+POKEBALL_SFX_PATH = Path("assets/audio/sfx/pokeball.mp3")
 
-# Hintergrundbilder unter background_images/backgrounds
-BACKGROUND_IMAGES_DIR = Path("background_images/backgrounds")
+# Hintergrundbilder unter assets/backgrounds/images
+BACKGROUND_IMAGES_DIR = Path("assets/backgrounds/images")
 
 # Pokéball-Animation
-POKEBALL_ANIMATION_PATH = Path("background_images/animations/pokeball_animation.gif")
+POKEBALL_ANIMATION_PATH = Path("assets/backgrounds/animations/pokeball_animation.gif")
 POKEBALL_PHASE_DURATION = 0.7  # feste Dauer der Pokéball-Phase
 
 # Sprite-Größe: größer
@@ -986,7 +986,7 @@ def create_quiz_video(output_path: str = "quiz.mp4", round_type: str = None):
     """round_type=None: normale Mischung aus ROUND_TYPE_WEIGHTS (Shiny-Quiz).
     round_type="stat_compare": eigenständiges Stat-Vergleich-Video, alle
     Runden dieses Typs (siehe stat_video.py)."""
-    assets_dir = Path("assets")
+    assets_dir = Path("assets/pokemon")
     all_dirs = [p for p in assets_dir.iterdir() if p.is_dir()]
     pokemon_dirs = [p for p in all_dirs if _is_valid_pokemon_dir(p)]
 

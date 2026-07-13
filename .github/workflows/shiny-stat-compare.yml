@@ -49,8 +49,9 @@ jobs:
 
       - name: Download assets from latest release
         run: |
-          # assets.tar.gz sollte auf Release-Ebene die Verzeichnisse enthalten:
-          # assets/, fonts/, music/, background_images/
+          # assets.tar.gz sollte beim Entpacken direkt den Ordner assets/
+          # (mit den Unterordnern pokemon/, fonts/, audio/, backgrounds/)
+          # ergeben, z.B. gepackt mit: tar czf assets.tar.gz assets
           curl -L "https://github.com/${{ github.repository }}/releases/latest/download/assets.tar.gz" -o assets.tar.gz
           tar xzf assets.tar.gz
 

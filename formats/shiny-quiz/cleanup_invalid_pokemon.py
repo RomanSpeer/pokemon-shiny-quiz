@@ -4,7 +4,7 @@ from pathlib import Path
 from moviepy.editor import VideoFileClip
 from PIL import Image
 
-ASSETS_DIR = Path("assets")
+ASSETS_DIR = Path("assets/pokemon")
 
 
 def is_animated_gif(path: Path) -> bool:

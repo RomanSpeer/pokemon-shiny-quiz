@@ -11,7 +11,7 @@ from tqdm import tqdm
 # Konfiguration
 # --------------------------------------------------------------------------- #
 BASE_URL = "https://pokeapi.co/api/v2"
-ASSETS_ROOT = Path("assets")
+ASSETS_ROOT = Path("assets/pokemon")
 
 # Wartezeit zwischen API‑Requests (in Sekunden) – reduziert das Risiko von
 # Rate‑Limit‑Fehlern (die API erlaubt ca. 100 Requests pro 60 Sekunden).
@@ -235,7 +235,7 @@ def main() -> None:
             tqdm.write(f"⚠️  Fehler bei {entry['name']}: {exc}")
         time.sleep(REQUEST_DELAY)  # Rate‑Limit‑Schutz
 
-    print("\n✅ Alle Assets wurden unter dem Ordner 'assets/' abgelegt.")
+    print("\n✅ Alle Assets wurden unter dem Ordner 'assets/pokemon/' abgelegt.")
     print(
         "💡 Du kannst das Verzeichnis jetzt in dein Projekt kopieren oder direkt\n"
         "   mit deinem `quiz_video.py` verwenden."

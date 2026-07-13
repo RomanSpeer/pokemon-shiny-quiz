@@ -17,7 +17,7 @@ FPS = 30
 SLIDE_DURATION = 7.0
 INTRO_DURATION = 2.0
 
-MUSIC_DIR = Path(__file__).parent / "video_background_music"
+MUSIC_DIR = Path(__file__).parent / "assets" / "audio" / "music"
 MUSIC_VOLUME = 0.15  # kept low so it sits under the cries instead of competing with them
 
 BAR_GREEN = (74, 222, 128)
@@ -62,7 +62,7 @@ def _slide_clip(img: Image.Image, duration: float) -> VideoClip:
 
 
 def _random_background_music(duration: float) -> AudioFileClip | None:
-    """Picks a random track from video_background_music/, loops it to cover the
+    """Picks a random track from assets/audio/music/, loops it to cover the
     full video, and turns it down so it sits quietly under the cry sound effects."""
     tracks = sorted(MUSIC_DIR.glob("*.mp3"))
     if not tracks:
