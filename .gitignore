@@ -27,3 +27,12 @@ background_images/
 
 # Credentials
 client_secret.json
+token.json
+*.token
+
+# OS / Editor cruft
+.DS_Store
+.claude/settings.local.json
+
+# TikTok / other secrets (classic-quiz format)
+tiktok_credentials.json

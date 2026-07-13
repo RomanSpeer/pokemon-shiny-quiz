@@ -1,9 +1,9 @@
 """Upload a video to YouTube as a Short.
 
 Requires env vars: YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN.
-Optional env var: YT_PLAYLIST_ID - if set, the uploaded video is added to
-that playlist (requires the refresh token to include the youtube.force-ssl
-scope, not just youtube.upload).
+Optional env var: YT_PLAYLIST_ID (or YT_STAT_PLAYLIST_ID for --format stat) -
+if set, the uploaded video is added to that playlist (requires the refresh
+token to include the youtube.force-ssl scope, not just youtube.upload).
 See get_youtube_refresh_token.py for how to obtain the refresh token once.
 """
 import argparse
@@ -49,13 +49,40 @@ VARIANTS = [
         "tags": ["Pokemon", "Shiny", "PokemonQuiz", "Shorts"],
     },
 ]
+
+STAT_VARIANTS = [
+    {
+        "title": "Who has more Speed? Pokémon Stat Battle! ⚔️ #Shorts",
+        "description": (
+            "Can you guess which Pokémon wins the stat battle? "
+            "#Shorts #Pokemon #PokemonQuiz #Stats"
+        ),
+        "tags": ["Pokemon", "PokemonQuiz", "Shorts", "Stats", "Gaming"],
+    },
+    {
+        "title": "Pokémon Stat Showdown - Who Wins? 📊 #Shorts",
+        "description": (
+            "Guess which Pokémon has the higher stat before the reveal! "
+            "#Shorts #Pokemon #PokemonQuiz #Stats"
+        ),
+        "tags": ["Pokemon", "PokemonQuiz", "Stats", "Shorts", "Nintendo"],
+    },
+    {
+        "title": "Test Your Pokédex Knowledge! Stat Battle 🎮 #Shorts",
+        "description": (
+            "Two Pokémon, one hidden stat - can you call the winner? "
+            "#Shorts #Pokemon #PokemonQuiz #Stats"
+        ),
+        "tags": ["Pokemon", "PokemonQuiz", "Stats", "Shorts", "Gaming"],
+    },
+]
 CATEGORY_ID = "24"  # Entertainment
 
 # Required by the music license (CinderyLofi allows free use, credit required).
 MUSIC_CREDIT = "Music: @CinderyLofi (https://www.youtube.com/@CinderyLofi)"
 
 
-def upload(video_path: str) -> None:
+def upload(video_path: str, format_: str = "shiny") -> None:
     creds = Credentials(
         token=None,
         refresh_token=os.environ["YT_REFRESH_TOKEN"],
@@ -65,7 +92,7 @@ def upload(video_path: str) -> None:
     )
     youtube = build("youtube", "v3", credentials=creds)
 
-    variant = random.choice(VARIANTS)
+    variant = random.choice(STAT_VARIANTS if format_ == "stat" else VARIANTS)
     description = f"{variant['description']}\n\n{MUSIC_CREDIT}"
     body = {
         "snippet": {
@@ -91,7 +118,8 @@ def upload(video_path: str) -> None:
     video_id = response["id"]
     print(f"YouTube video uploaded: https://youtube.com/watch?v={video_id}")
 
-    playlist_id = os.environ.get("YT_PLAYLIST_ID")
+    playlist_env = "YT_STAT_PLAYLIST_ID" if format_ == "stat" else "YT_PLAYLIST_ID"
+    playlist_id = os.environ.get(playlist_env)
     if playlist_id:
         youtube.playlistItems().insert(
             part="snippet",
@@ -108,5 +136,6 @@ def upload(video_path: str) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Upload video to YouTube Shorts")
     parser.add_argument("--video", required=True, help="Path to video file")
+    parser.add_argument("--format", dest="format_", default="shiny", choices=["shiny", "stat"])
     args = parser.parse_args()
-    upload(args.video)
+    upload(args.video, format_=args.format_)
