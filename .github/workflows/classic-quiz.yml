@@ -61,13 +61,16 @@ jobs:
 
       - name: Upload to YouTube Shorts
         env:
-          # NOTE: renamed from YT_* to CLASSIC_YT_* to avoid colliding with
-          # the shiny-quiz format's YT_* secrets now that both live in the
-          # same repo. If both formats actually upload to the SAME YouTube
-          # channel, you can instead delete this prefix and reuse the
-          # existing YT_* secrets below.
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           YT_PLAYLIST_ID: ${{ secrets.YT_PLAYLIST_ID }}
         run: python upload_youtube.py --video "${{ steps.video.outputs.path }}"
+
+      - name: Upload to TikTok (Sandbox, private)
+        continue-on-error: true
+        env:
+          TT_CLIENT_KEY: ${{ secrets.TT_CLIENT_KEY }}
+          TT_CLIENT_SECRET: ${{ secrets.TT_CLIENT_SECRET }}
+          TT_REFRESH_TOKEN: ${{ secrets.TT_REFRESH_TOKEN }}
+        run: python upload_tiktok.py --video "${{ steps.video.outputs.path }}"

@@ -75,3 +75,11 @@ jobs:
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           YT_PLAYLIST_ID: ${{ secrets.YT_PLAYLIST_ID }}
         run: python upload_youtube.py --video output.mp4
+
+      - name: Upload to TikTok (Sandbox, private)
+        continue-on-error: true
+        env:
+          TT_CLIENT_KEY: ${{ secrets.TT_CLIENT_KEY }}
+          TT_CLIENT_SECRET: ${{ secrets.TT_CLIENT_SECRET }}
+          TT_REFRESH_TOKEN: ${{ secrets.TT_REFRESH_TOKEN }}
+        run: python upload_tiktok.py --video output.mp4

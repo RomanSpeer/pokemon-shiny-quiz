@@ -20,6 +20,7 @@ VARIANTS = [
         "title": "Guess the Shiny Pokémon! ✨🔥 #Shorts",
         "description": (
             "Can you guess which Pokémon is the Shiny one before time runs out? "
+            "Comment your guess before the reveal! "
             "#Shorts #Pokemon #Shiny #Quiz"
         ),
         "tags": ["Pokemon", "Shiny", "Shorts", "Quiz"],
@@ -28,6 +29,7 @@ VARIANTS = [
         "title": "Only a TRUE Pokémon fan can guess this! ⚡️ #Shorts",
         "description": (
             "Can you guess the shiny Pokémon faster than the timer? "
+            "Drop your answer in the comments! "
             "#Shorts #Pokemon #PokemonQuiz #Shiny #Gaming"
         ),
         "tags": ["Pokemon", "PokemonQuiz", "Shorts", "Shiny", "Gaming"],
@@ -35,7 +37,8 @@ VARIANTS = [
     {
         "title": "Shiny Pokémon Quiz - How fast can YOU guess? 🎮",
         "description": (
-            "New round, new shiny Pokémon! Drop your guess in the comments. "
+            "New round, new shiny Pokémon! Drop your guess in the comments "
+            "before time runs out. "
             "#Shorts #Pokemon #Shiny #Quiz #Nintendo"
         ),
         "tags": ["Pokemon", "Shiny", "Quiz", "Shorts", "Nintendo"],
@@ -44,6 +47,7 @@ VARIANTS = [
         "title": "Can you name this Shiny Pokémon in 3 seconds? ⏱️",
         "description": (
             "Shiny Pokémon guessing game - put your knowledge to the test! "
+            "Comment your guess below. "
             "#Shorts #Pokemon #Shiny #PokemonQuiz"
         ),
         "tags": ["Pokemon", "Shiny", "PokemonQuiz", "Shorts"],
@@ -55,6 +59,7 @@ STAT_VARIANTS = [
         "title": "Who has more Speed? Pokémon Stat Battle! ⚔️ #Shorts",
         "description": (
             "Can you guess which Pokémon wins the stat battle? "
+            "Comment your pick before the reveal! "
             "#Shorts #Pokemon #PokemonQuiz #Stats"
         ),
         "tags": ["Pokemon", "PokemonQuiz", "Shorts", "Stats", "Gaming"],
@@ -63,6 +68,7 @@ STAT_VARIANTS = [
         "title": "Pokémon Stat Showdown - Who Wins? 📊 #Shorts",
         "description": (
             "Guess which Pokémon has the higher stat before the reveal! "
+            "Drop your answer in the comments. "
             "#Shorts #Pokemon #PokemonQuiz #Stats"
         ),
         "tags": ["Pokemon", "PokemonQuiz", "Stats", "Shorts", "Nintendo"],
@@ -71,6 +77,7 @@ STAT_VARIANTS = [
         "title": "Test Your Pokédex Knowledge! Stat Battle 🎮 #Shorts",
         "description": (
             "Two Pokémon, one hidden stat - can you call the winner? "
+            "Comment your guess below! "
             "#Shorts #Pokemon #PokemonQuiz #Stats"
         ),
         "tags": ["Pokemon", "PokemonQuiz", "Stats", "Shorts", "Gaming"],

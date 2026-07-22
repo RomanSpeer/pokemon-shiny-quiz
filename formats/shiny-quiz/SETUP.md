@@ -91,8 +91,28 @@ jeder Änderung an `assets/pokemon/` erneut laufen lassen (fügt neue/aktualisie
 bestehende Einträge hinzu, ohne alles neu abzufragen wäre aufwendiger -
 aktuell wird komplett neu geschrieben).
 
+## TikTok (Sandbox, privat)
+
+Beide Workflows laden zusätzlich zu YouTube auch zu TikTok hoch
+(`upload_tiktok.py`), mit `continue-on-error: true` - schlägt TikTok fehl,
+läuft der YouTube-Upload trotzdem durch.
+
+Nutzt dieselben `TT_CLIENT_KEY` / `TT_CLIENT_SECRET` / `TT_REFRESH_TOKEN`
+Secrets wie `formats/classic-quiz/` (gleicher TikTok-Account). Falls diese
+noch nicht existieren, siehe
+[`formats/classic-quiz/get_tiktok_refresh_token.py`](../classic-quiz/get_tiktok_refresh_token.py)
+für die einmalige Einrichtung.
+
+**Wichtig:** Solange die TikTok-App nicht von TikTok für "Direct Post"
+freigegeben ist (Sandbox/unaudited), postet `upload_tiktok.py` nur mit
+`privacy_level: SELF_ONLY` - das Video ist nur für dich selbst sichtbar,
+bis du es in der App manuell auf öffentlich stellst. Ein Antrag auf
+Produktionsfreigabe für rein privaten/internen Gebrauch wird von TikTok
+abgelehnt (siehe TikTok-Antwort dazu) - SELF_ONLY ist aktuell der einzig
+gangbare automatisierte Weg.
+
 ## Testen
 
-Workflow manuell über "Run workflow" (workflow_dispatch) starten und den
-Log des Schritts "Upload to YouTube Shorts" prüfen, bevor der Cron-Zeitplan
-scharf geschaltet wird.
+Workflow manuell über "Run workflow" (workflow_dispatch) starten und die
+Logs der Schritte "Upload to YouTube Shorts" und "Upload to TikTok" prüfen,
+bevor der Cron-Zeitplan scharf geschaltet wird.

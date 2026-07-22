@@ -301,6 +301,56 @@ def _apply_fade_mask(clip, start_opacity: float = 1.0, end_opacity: float = 0.45
     return clip.set_mask(clip.mask.fl(fade))
 
 
+def _build_reveal_quadrants(
+    duration: float,
+    gif_paths: list[str],
+    question_transforms: list,
+    winner_idx: int,
+) -> list:
+    """Reveal-Layout für alle Rundentypen mit 4 Kandidaten: alle bleiben an
+    ihrer Quadranten-Position, der Gewinner zeigt seine echte Farbe, pulsiert
+    kurz größer/kleiner und liegt im Vordergrund. Die "Verlierer" behalten
+    ihre Frage-Phasen-Darstellung (z.B. Hue-Shift oder Silhouette), verblassen
+    aber Richtung Grau/Transparent (nie ganz unsichtbar)."""
+    quad_w, quad_h = WIDTH // 2, HEIGHT // 2
+    positions = [(0, 0), (quad_w, 0), (0, quad_h), (quad_w, quad_h)]
+    sprite_max_w = quad_w * SPRITE_QUAD_RATIO
+    sprite_max_h = quad_h * SPRITE_QUAD_RATIO
+
+    clips = []
+    for i, (path_str, pos, question_transform) in enumerate(zip(gif_paths, positions, question_transforms)):
+        is_winner = i == winner_idx
+        if is_winner:
+            transform = None  # Gewinner immer in echter Farbe zeigen
+        elif question_transform is not None:
+            transform = lambda f, qt=question_transform: _desaturate_frame(qt(f), 0.6)
+        else:
+            transform = lambda f: _desaturate_frame(f, 0.6)
+
+        clip = _load_gif_clip_ffmpeg_loop(Path(path_str), duration, color_transform=transform)
+
+        desired_scale = min(sprite_max_w / clip.w, sprite_max_h / clip.h)
+        base_scale = desired_scale if desired_scale < 1.0 else min(desired_scale, MAX_SCALE_UP)
+
+        if is_winner:
+            base_scale *= 1.15
+            clip = clip.resize(
+                lambda t, bs=base_scale: bs * (1 + 0.12 * np.sin(2 * np.pi * 1.2 * t))
+            )
+        else:
+            clip = clip.resize(base_scale)
+            clip = _apply_fade_mask(clip, start_opacity=1.0, end_opacity=0.45)
+
+        quad_x, quad_y = pos
+        x = quad_x + (quad_w - clip.w) / 2
+        y = quad_y + (quad_h - clip.h) / 2
+        clip = clip.set_position((x, y)).set_duration(duration)
+        clips.append(clip)
+
+    # Gewinner als letztes Element = oberste Ebene, damit er im Vordergrund steht.
+    return [c for i, c in enumerate(clips) if i != winner_idx] + [clips[winner_idx]]
+
+
 # ---------------------------------------------------------------------------
 # Helper: Quadranten aus GIFs bauen (FFmpeg -> eigener Loop-Clip)
 # ---------------------------------------------------------------------------
@@ -556,21 +606,43 @@ def _shiny_color_distance(pokemon_dir: Path) -> float:
 
 MIN_SHINY_COLOR_DISTANCE = 8.0  # unterhalb dessen gilt normal/shiny als (fast) ununterscheidbar
 
-MIN_SHINY_SATURATION = 60.0  # unterhalb dessen ist ein Hue-Shift kaum sichtbar (z.B. sehr dunkle Shinys)
 COLOR_SHIFT_PICK_ATTEMPTS = 6
+# Mindest-Farbunterschied (mittlere absolute RGB-Abweichung, 0-255) bei
+# HUE_SHIFT_MIN_DEGREES - dem kleinstmöglichen erlaubten Shift. Direkt
+# gemessen statt über Sättigung geschätzt, da manche Shinys trotz
+# ausreichender Durchschnitts-Sättigung nur auf einer kleinen Fläche
+# Farbe tragen und der Shift dort trotzdem kaum auffällt.
+MIN_HUE_SHIFT_DIFF = 18.0
 
 
-def _average_saturation(gif_path: Path) -> float:
-    """Durchschnittliche HSV-Sättigung des ersten Frames, transparente Pixel
-    ausgeschlossen. Bei niedriger Sättigung (Grau-/Schwarztöne) ist ein
-    Hue-Shift kaum sichtbar."""
+def _hue_shift_visible_diff(gif_path: Path, degrees: float) -> float:
+    """Mittlere absolute RGB-Abweichung zwischen Original und Hue-Shift auf
+    den sichtbaren (nicht-transparenten) Pixeln des ersten Frames."""
     with Image.open(gif_path) as im:
         arr = np.array(im.convert("RGBA"))
+    rgb = arr[..., :3]
     mask = arr[..., 3] > 10
     if not mask.any():
         mask = np.ones(arr.shape[:2], dtype=bool)
-    hsv = np.array(Image.fromarray(arr[..., :3], "RGB").convert("HSV"))
-    return float(hsv[..., 1][mask].mean())
+    shifted = _hue_shift_frame(rgb, degrees)
+    diff = np.abs(rgb[mask].astype(np.int16) - shifted[mask].astype(np.int16))
+    return float(diff.mean())
+
+
+def _min_visible_hue_degrees(gif_path: Path) -> float | None:
+    """Findet den kleinsten Hue-Shift-Winkel zwischen HUE_SHIFT_MIN_DEGREES
+    und HUE_SHIFT_MAX_DEGREES, der noch mindestens MIN_HUE_SHIFT_DIFF
+    mittlere Pixel-Abweichung erzeugt. Ein fester globaler Mindestwinkel
+    (z.B. 25°) reicht bei den meisten Sprites bei weitem nicht aus - der
+    nötige Winkel hängt stark von der Sättigung des jeweiligen Sprites ab.
+    Gibt None zurück, wenn selbst der maximale Winkel nicht ausreicht (z.B.
+    sehr dunkle/entsättigte Shinys)."""
+    degrees = HUE_SHIFT_MIN_DEGREES
+    while degrees <= HUE_SHIFT_MAX_DEGREES:
+        if _hue_shift_visible_diff(gif_path, degrees) >= MIN_HUE_SHIFT_DIFF:
+            return degrees
+        degrees += 5
+    return None
 
 
 def _pick_round_type(exclude: frozenset = frozenset()) -> str:
@@ -678,8 +750,10 @@ def _prepare_species_round(pokemon_dirs, color_distances):
             raise FileNotFoundError(f"Normal GIF not found: {normal_path}")
         normal_paths.append(normal_path)
 
-    entries = [(str(shiny_path), None)] + [(str(p), None) for p in normal_paths]
+    winner_entry = (str(shiny_path), None)
+    entries = [winner_entry] + [(str(p), None) for p in normal_paths]
     random.shuffle(entries)
+    winner_idx = next(i for i, e in enumerate(entries) if e is winner_entry)
 
     cry_path = shiny_dir / "cry.ogg"
     return {
@@ -687,6 +761,7 @@ def _prepare_species_round(pokemon_dirs, color_distances):
         "color_transforms": [e[1] for e in entries],
         "guess_label": "Guess the Shiny",
         "shiny_path": shiny_path,
+        "winner_idx": winner_idx,
         "cry_str": str(cry_path) if cry_path.is_file() else None,
         "question_cry_offset": None,
         "mute_pokeball_sfx": False,
@@ -694,20 +769,44 @@ def _prepare_species_round(pokemon_dirs, color_distances):
 
 
 def _prepare_color_shift_round(pokemon_dirs):
-    """1 Pokémon 4x gezeigt, 3x mit verschobenem Hue - welches ist die echte Farbe?"""
+    """1 Pokémon 4x gezeigt, 3x mit verschobenem Hue - welches ist die echte Farbe?
+    Der nötige Mindestwinkel für sichtbaren Unterschied hängt stark von der
+    Sättigung des jeweiligen Shiny-Sprites ab (ein fester globaler Winkel
+    reicht bei den meisten Sprites bei weitem nicht) - daher wird er pro
+    Pokémon dynamisch kalibriert (_min_visible_hue_degrees). Pokémon, bei
+    denen selbst der maximale Winkel nicht ausreicht, werden übersprungen."""
     pokemon_dir = random.choice(pokemon_dirs)
+    min_degrees = HUE_SHIFT_MIN_DEGREES
+    for _ in range(COLOR_SHIFT_PICK_ATTEMPTS):
+        candidate = random.choice(pokemon_dirs)
+        candidate_shiny = candidate / "shiny.gif"
+        if not candidate_shiny.is_file():
+            continue
+        required = _min_visible_hue_degrees(candidate_shiny)
+        if required is not None:
+            pokemon_dir = candidate
+            min_degrees = required
+            break
+    else:
+        # Kein Kandidat in COLOR_SHIFT_PICK_ATTEMPTS Versuchen gefunden ->
+        # letzten Fallback-Pick trotzdem kalibrieren statt den globalen
+        # (meist zu kleinen) Standardwinkel zu verwenden.
+        min_degrees = _min_visible_hue_degrees(pokemon_dir / "shiny.gif") or HUE_SHIFT_MIN_DEGREES
+
     shiny_path = pokemon_dir / "shiny.gif"
     if not shiny_path.is_file():
         raise FileNotFoundError(f"Shiny GIF not found: {shiny_path}")
 
-    entries = [(str(shiny_path), None)]
+    winner_entry = (str(shiny_path), None)
+    entries = [winner_entry]
     for _ in range(3):
-        degrees = random.uniform(HUE_SHIFT_MIN_DEGREES, HUE_SHIFT_MAX_DEGREES)
+        degrees = random.uniform(min_degrees, HUE_SHIFT_MAX_DEGREES)
         degrees *= random.choice([-1, 1])
         entries.append(
             (str(shiny_path), lambda frame, d=degrees: _hue_shift_frame(frame, d))
         )
     random.shuffle(entries)
+    winner_idx = next(i for i, e in enumerate(entries) if e is winner_entry)
 
     cry_path = pokemon_dir / "cry.ogg"
     return {
@@ -715,6 +814,7 @@ def _prepare_color_shift_round(pokemon_dirs):
         "color_transforms": [e[1] for e in entries],
         "guess_label": "Spot the REAL Shiny!",
         "shiny_path": shiny_path,
+        "winner_idx": winner_idx,
         "cry_str": str(cry_path) if cry_path.is_file() else None,
         "question_cry_offset": None,
         "mute_pokeball_sfx": False,
@@ -727,12 +827,17 @@ def _prepare_cry_round(pokemon_dirs):
     answer_dir = random.choice(selected_dirs)
 
     entries = []
+    winner_entry = None
     for d in selected_dirs:
         normal_path = d / "normal.gif"
         if not normal_path.is_file():
             raise FileNotFoundError(f"Normal GIF not found: {normal_path}")
-        entries.append((str(normal_path), _silhouette_frame))
+        entry = (str(normal_path), _silhouette_frame)
+        entries.append(entry)
+        if d == answer_dir:
+            winner_entry = entry
     random.shuffle(entries)
+    winner_idx = next(i for i, e in enumerate(entries) if e is winner_entry)
 
     shiny_path = answer_dir / "shiny.gif"
     cry_path = answer_dir / "cry.ogg"
@@ -741,6 +846,7 @@ def _prepare_cry_round(pokemon_dirs):
         "color_transforms": [e[1] for e in entries],
         "guess_label": "Guess by the Cry!",
         "shiny_path": shiny_path,
+        "winner_idx": winner_idx,
         "cry_str": str(cry_path) if cry_path.is_file() else None,
         # Marker: wird unten zu zwei tatsächlichen Zeitpunkten aufgelöst,
         # sobald pokeball_duration bekannt ist.
@@ -838,23 +944,29 @@ def _create_round(pokemon_dirs, background_frame, color_distances, round_type=No
     ).set_duration(QUESTION_DURATION)
 
     # -------------------- Teil 2: Reveal --------------------
-    shiny_clip = _load_gif_clip_ffmpeg_loop(shiny_path, REVEAL_DURATION)
+    # Alle 4 bleiben an ihrer Quadranten-Position sichtbar: Verlierer
+    # behalten ihre Frage-Phasen-Darstellung (Hue-Shift/Silhouette/normal),
+    # verblassen aber Richtung Grau/Transparent. Der Gewinner zeigt immer
+    # sein echtes Shiny-Sprite, pulsiert kurz größer/kleiner und liegt im
+    # Vordergrund - für Konsistenz auch beim Cry-Rundentyp (dort war die
+    # Frage-Phase nur eine Silhouette).
+    winner_idx = setup["winner_idx"]
+    reveal_gif_paths = list(gif_order)
+    reveal_gif_paths[winner_idx] = str(shiny_path)
 
-    scale = 3.0
-    shiny_clip = shiny_clip.resize(scale)
-    shiny_clip = shiny_clip.set_position(("center", "center")).set_duration(REVEAL_DURATION)
+    reveal_quadrants = _build_reveal_quadrants(
+        REVEAL_DURATION, reveal_gif_paths, color_transforms, winner_idx
+    )
 
+    elements_r = []
     if background_frame is not None:
-        bg_clip_r = ImageClip(background_frame).set_duration(REVEAL_DURATION)
-        reveal_clip = CompositeVideoClip(
-            [bg_clip_r, shiny_clip],
-            size=(WIDTH, HEIGHT)
-        ).set_duration(REVEAL_DURATION)
-    else:
-        reveal_clip = CompositeVideoClip(
-            [shiny_clip],
-            size=(WIDTH, HEIGHT)
-        ).set_duration(REVEAL_DURATION)
+        elements_r.append(ImageClip(background_frame).set_duration(REVEAL_DURATION))
+    elements_r.extend(reveal_quadrants)
+
+    reveal_clip = CompositeVideoClip(
+        elements_r,
+        size=(WIDTH, HEIGHT)
+    ).set_duration(REVEAL_DURATION)
 
     round_clip = concatenate_videoclips([question_clip, reveal_clip])
 
@@ -904,40 +1016,8 @@ def _create_stat_round(pokemon_dirs, background_frame, group):
     # verblassen langsam Richtung grau/transparent (nie ganz unsichtbar),
     # Gewinner pulsiert kurz größer/kleiner und liegt im Vordergrund.
     winner_idx = next(i for i, (name, _) in enumerate(entries) if name == winner_name)
-
-    quad_w, quad_h = WIDTH // 2, HEIGHT // 2
-    positions = [(0, 0), (quad_w, 0), (0, quad_h), (quad_w, quad_h)]
-    sprite_max_w = quad_w * SPRITE_QUAD_RATIO
-    sprite_max_h = quad_h * SPRITE_QUAD_RATIO
-
-    reveal_quadrants = []
-    for i, (path_str, pos) in enumerate(zip(gif_paths, positions)):
-        is_winner = i == winner_idx
-        transform = None if is_winner else (lambda f: _desaturate_frame(f, 0.6))
-        clip = _load_gif_clip_ffmpeg_loop(Path(path_str), STAT_REVEAL_DURATION, color_transform=transform)
-
-        desired_scale = min(sprite_max_w / clip.w, sprite_max_h / clip.h)
-        base_scale = desired_scale if desired_scale < 1.0 else min(desired_scale, MAX_SCALE_UP)
-
-        if is_winner:
-            base_scale *= 1.15
-            clip = clip.resize(
-                lambda t, bs=base_scale: bs * (1 + 0.12 * np.sin(2 * np.pi * 1.2 * t))
-            )
-        else:
-            clip = clip.resize(base_scale)
-            clip = _apply_fade_mask(clip, start_opacity=1.0, end_opacity=0.45)
-
-        quad_x, quad_y = pos
-        x = quad_x + (quad_w - clip.w) / 2
-        y = quad_y + (quad_h - clip.h) / 2
-        clip = clip.set_position((x, y)).set_duration(STAT_REVEAL_DURATION)
-        reveal_quadrants.append(clip)
-
-    # Gewinner als letztes Element = oberste Ebene, damit er im Vordergrund steht.
-    reveal_quadrants = (
-        [c for i, c in enumerate(reveal_quadrants) if i != winner_idx]
-        + [reveal_quadrants[winner_idx]]
+    reveal_quadrants = _build_reveal_quadrants(
+        STAT_REVEAL_DURATION, gif_paths, [None] * 4, winner_idx
     )
 
     # (x_center, y_ratio) je Quadrant, nah am jeweiligen Sprite - Reihenfolge
