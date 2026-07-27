@@ -209,7 +209,9 @@ def slide_type_chart(pokemon: PokemonData) -> Image.Image:
     if pokemon.matchups.weak_4x:
         sections.append(("4× WEAK AGAINST", pokemon.matchups.weak_4x, (239, 68, 68)))
     sections.append(("2× WEAK AGAINST", pokemon.matchups.weak_2x, (248, 113, 113)))
-    sections.append(("RESISTANT TO", pokemon.matchups.resist, (74, 222, 128)))
+    if pokemon.matchups.resist_4x:
+        sections.append(("4× RESISTANT TO", pokemon.matchups.resist_4x, (22, 163, 74)))
+    sections.append(("2× RESISTANT TO", pokemon.matchups.resist, (74, 222, 128)))
     sections.append(("IMMUNE TO", pokemon.matchups.immune, (96, 165, 250)))
     sections.append(("NORMAL DAMAGE FROM", pokemon.matchups.normal, MUTED_COLOR))
 

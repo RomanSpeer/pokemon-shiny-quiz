@@ -22,11 +22,12 @@ ALL_TYPES = [
 
 @dataclass
 class TypeMatchups:
-    weak_4x: list[str] = field(default_factory=list)   # Takes 4x damage
-    weak_2x: list[str] = field(default_factory=list)   # Takes 2x damage
-    resist: list[str] = field(default_factory=list)    # Takes reduced damage
-    immune: list[str] = field(default_factory=list)    # Takes no damage
-    normal: list[str] = field(default_factory=list)    # Takes normal damage
+    weak_4x: list[str] = field(default_factory=list)    # Takes 4x damage
+    weak_2x: list[str] = field(default_factory=list)    # Takes 2x damage
+    resist_4x: list[str] = field(default_factory=list)  # Takes 1/4x damage
+    resist: list[str] = field(default_factory=list)     # Takes 1/2x damage
+    immune: list[str] = field(default_factory=list)     # Takes no damage
+    normal: list[str] = field(default_factory=list)     # Takes normal damage
 
 
 @dataclass
@@ -109,6 +110,8 @@ def compute_type_matchups(types: list[str]) -> TypeMatchups:
             matchups.weak_4x.append(type_name)
         elif factor > 1:
             matchups.weak_2x.append(type_name)
+        elif factor <= 0.25:
+            matchups.resist_4x.append(type_name)
         elif factor < 1:
             matchups.resist.append(type_name)
         else:
