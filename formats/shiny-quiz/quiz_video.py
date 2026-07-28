@@ -606,13 +606,17 @@ def _shiny_color_distance(pokemon_dir: Path) -> float:
 
 MIN_SHINY_COLOR_DISTANCE = 8.0  # unterhalb dessen gilt normal/shiny als (fast) ununterscheidbar
 
-COLOR_SHIFT_PICK_ATTEMPTS = 6
+COLOR_SHIFT_PICK_ATTEMPTS = 20
 # Mindest-Farbunterschied (mittlere absolute RGB-Abweichung, 0-255) bei
 # HUE_SHIFT_MIN_DEGREES - dem kleinstmöglichen erlaubten Shift. Direkt
 # gemessen statt über Sättigung geschätzt, da manche Shinys trotz
 # ausreichender Durchschnitts-Sättigung nur auf einer kleinen Fläche
 # Farbe tragen und der Shift dort trotzdem kaum auffällt.
 MIN_HUE_SHIFT_DIFF = 18.0
+# Mindest-Restspanne zwischen dem kalibrierten Mindestwinkel und
+# HUE_SHIFT_MAX_DEGREES - ohne genug Spielraum passen keine 3 paarweise
+# unterscheidbaren Decoy-Winkel mehr in den verbleibenden Bereich.
+MIN_HUE_BAND_WIDTH = 40.0
 
 
 def _hue_shift_visible_diff(gif_path: Path, degrees: float) -> float:
@@ -635,14 +639,72 @@ def _min_visible_hue_degrees(gif_path: Path) -> float | None:
     mittlere Pixel-Abweichung erzeugt. Ein fester globaler Mindestwinkel
     (z.B. 25°) reicht bei den meisten Sprites bei weitem nicht aus - der
     nötige Winkel hängt stark von der Sättigung des jeweiligen Sprites ab.
+
     Gibt None zurück, wenn selbst der maximale Winkel nicht ausreicht (z.B.
-    sehr dunkle/entsättigte Shinys)."""
+    sehr dunkle/entsättigte Shinys), oder wenn zwischen dem gefundenen
+    Winkel und HUE_SHIFT_MAX_DEGREES nicht mehr genug Spielraum
+    (MIN_HUE_BAND_WIDTH) bleibt: mit nur einem schmalen Rest-Band lassen
+    sich keine 3 Decoys erzeugen, die sich auch UNTEREINANDER ausreichend
+    unterscheiden (sie würden alle in dieselbe enge Ecke des Farbkreises
+    fallen)."""
     degrees = HUE_SHIFT_MIN_DEGREES
     while degrees <= HUE_SHIFT_MAX_DEGREES:
         if _hue_shift_visible_diff(gif_path, degrees) >= MIN_HUE_SHIFT_DIFF:
+            if HUE_SHIFT_MAX_DEGREES - degrees < MIN_HUE_BAND_WIDTH:
+                return None
             return degrees
         degrees += 5
     return None
+
+
+def _generate_distinct_hue_shifts(
+    gif_path: Path, min_degrees: float, count: int = 3, max_attempts: int = 30
+) -> list[float] | None:
+    """Erzeugt `count` Hue-Shift-Winkel für die Decoys einer Color-Shift-Runde.
+
+    Jeder Winkel muss sich sowohl vom Original als auch von jedem bereits
+    gewählten Decoy um mindestens MIN_HUE_SHIFT_DIFF sichtbare Pixel-
+    Abweichung unterscheiden. Nur gegen das Original zu prüfen reicht nicht:
+    zwei unabhängig gezogene Winkel (z.B. +80° und +85°) können beide weit
+    genug vom Original entfernt sein und trotzdem für den Betrachter fast
+    identisch aussehen. Wie viel Winkelabstand für MIN_HUE_SHIFT_DIFF nötig
+    ist, hängt (wie schon bei min_degrees) stark vom Pokémon ab - daher wird
+    hier tatsächlich gerendert und gemessen statt mit einer festen
+    Gradzahl-Heuristik geschätzt.
+
+    Gibt None zurück, wenn innerhalb von max_attempts kein vollständiges,
+    paarweise unterscheidbares Set gefunden wurde (z.B. weil min_degrees so
+    nah an HUE_SHIFT_MAX_DEGREES liegt, dass für 3 Decoys schlicht nicht
+    genug Platz im Farbkreis bleibt) - der Aufrufer sollte dann ein anderes
+    Pokémon probieren, statt ein zu ähnliches Set zu akzeptieren."""
+    with Image.open(gif_path) as im:
+        arr = np.array(im.convert("RGBA"))
+    rgb = arr[..., :3]
+    mask = arr[..., 3] > 10
+    if not mask.any():
+        mask = np.ones(arr.shape[:2], dtype=bool)
+
+    def visible_diff(frame_a: np.ndarray, frame_b: np.ndarray) -> float:
+        return float(np.abs(frame_a[mask].astype(np.int16) - frame_b[mask].astype(np.int16)).mean())
+
+    chosen_degrees: list[float] = []
+    chosen_frames: list[np.ndarray] = []
+    for _ in range(count):
+        degrees = None
+        for _ in range(max_attempts):
+            candidate_degrees = random.uniform(min_degrees, HUE_SHIFT_MAX_DEGREES) * random.choice([-1, 1])
+            candidate_frame = _hue_shift_frame(rgb, candidate_degrees)
+            if visible_diff(rgb, candidate_frame) < MIN_HUE_SHIFT_DIFF:
+                continue
+            if any(visible_diff(candidate_frame, f) < MIN_HUE_SHIFT_DIFF for f in chosen_frames):
+                continue
+            degrees, frame = candidate_degrees, candidate_frame
+            break
+        if degrees is None:
+            return None
+        chosen_degrees.append(degrees)
+        chosen_frames.append(frame)
+    return chosen_degrees
 
 
 def _pick_round_type(exclude: frozenset = frozenset()) -> str:
@@ -773,35 +835,47 @@ def _prepare_color_shift_round(pokemon_dirs):
     Der nötige Mindestwinkel für sichtbaren Unterschied hängt stark von der
     Sättigung des jeweiligen Shiny-Sprites ab (ein fester globaler Winkel
     reicht bei den meisten Sprites bei weitem nicht) - daher wird er pro
-    Pokémon dynamisch kalibriert (_min_visible_hue_degrees). Pokémon, bei
-    denen selbst der maximale Winkel nicht ausreicht, werden übersprungen."""
+    Pokémon dynamisch kalibriert (_min_visible_hue_degrees). Zusätzlich wird
+    direkt geprüft, ob sich für dieses Pokémon überhaupt 3 paarweise
+    unterscheidbare Decoy-Farben erzeugen lassen (_generate_distinct_hue_
+    shifts) - manche Kombinationen aus Sättigung und min_degrees lassen dafür
+    schlicht nicht genug Platz im Farbkreis. Pokémon, bei denen weder das
+    eine noch das andere klappt, werden übersprungen."""
     pokemon_dir = random.choice(pokemon_dirs)
     min_degrees = HUE_SHIFT_MIN_DEGREES
+    degrees_list = None
     for _ in range(COLOR_SHIFT_PICK_ATTEMPTS):
         candidate = random.choice(pokemon_dirs)
         candidate_shiny = candidate / "shiny.gif"
         if not candidate_shiny.is_file():
             continue
         required = _min_visible_hue_degrees(candidate_shiny)
-        if required is not None:
+        if required is None:
+            continue
+        candidate_degrees_list = _generate_distinct_hue_shifts(candidate_shiny, required)
+        if candidate_degrees_list is not None:
             pokemon_dir = candidate
             min_degrees = required
+            degrees_list = candidate_degrees_list
             break
-    else:
-        # Kein Kandidat in COLOR_SHIFT_PICK_ATTEMPTS Versuchen gefunden ->
-        # letzten Fallback-Pick trotzdem kalibrieren statt den globalen
-        # (meist zu kleinen) Standardwinkel zu verwenden.
-        min_degrees = _min_visible_hue_degrees(pokemon_dir / "shiny.gif") or HUE_SHIFT_MIN_DEGREES
 
     shiny_path = pokemon_dir / "shiny.gif"
     if not shiny_path.is_file():
         raise FileNotFoundError(f"Shiny GIF not found: {shiny_path}")
 
+    if degrees_list is None:
+        # Kein Kandidat in COLOR_SHIFT_PICK_ATTEMPTS Versuchen gefunden ->
+        # letzter Fallback-Pick, auch wenn die 3 Decoys dann evtl. nicht
+        # perfekt paarweise unterscheidbar sind (besser als abzustürzen).
+        min_degrees = _min_visible_hue_degrees(shiny_path) or HUE_SHIFT_MIN_DEGREES
+        degrees_list = _generate_distinct_hue_shifts(shiny_path, min_degrees) or [
+            random.uniform(min_degrees, HUE_SHIFT_MAX_DEGREES) * random.choice([-1, 1])
+            for _ in range(3)
+        ]
+
     winner_entry = (str(shiny_path), None)
     entries = [winner_entry]
-    for _ in range(3):
-        degrees = random.uniform(min_degrees, HUE_SHIFT_MAX_DEGREES)
-        degrees *= random.choice([-1, 1])
+    for degrees in degrees_list:
         entries.append(
             (str(shiny_path), lambda frame, d=degrees: _hue_shift_frame(frame, d))
         )
